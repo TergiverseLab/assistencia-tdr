@@ -56,6 +56,15 @@ input[type=date],input[type=text],input[type=number],input[type=month],select{fo
 .p.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .p.on input{accent-color:var(--bg)}
 .p .pend{margin-left:auto;font-size:.72rem;color:var(--bad);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.p .quota{margin-left:auto;flex:none;font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 9px;line-height:1.3;white-space:nowrap}
+.p.on .quota{color:rgba(255,255,255,.72);border-color:rgba(255,255,255,.35)}
+.p .pend + .quota{margin-left:6px}
+.quotabar{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;width:100%;min-height:40px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--fg);font:inherit;font-size:.85rem;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.quotabar .qtxt{color:var(--muted)}
+.quotabar .qbar{height:4px;background:var(--soft);border-radius:2px;overflow:hidden}
+.quotabar .qbar i{display:block;height:100%;background:var(--fg);border-radius:2px}
+.quotabar .qnum{font:700 .95rem var(--display);font-variant-numeric:tabular-nums}
+.quotabar[hidden]{display:none}
 .pay.soc{background:var(--soft);border-radius:8px;padding:6px 8px}
 .pay.soc .name{font-size:.95rem}
 /* botones */
@@ -176,6 +185,7 @@ textarea{font:inherit;font-size:.85rem;width:100%;min-height:140px;background:va
       <div class="row" id="l-lockrow" hidden><button class="btn ghost small" id="l-lock" type="button">Desbloquear para corregir</button><span class="note" id="l-info"></span></div>
       <div class="row nowrap"><h2>Quién ha venido</h2><span class="spacer"></span><span class="count" id="l-count">0</span></div>
       <button class="btn ghost small" id="l-all" type="button" style="align-self:flex-start">Marcar todas</button>
+      <button class="quotabar" id="l-quota" type="button" hidden></button>
       <div class="roster" id="l-roster"></div>
       <label class="field">Vienen a probar (nombres, separados por comas) <input type="text" id="l-others" placeholder="p. ej. Yolanda" autocomplete="off"></label>
       <p class="note">Solo para quien viene a probar y aún no está apuntada. Si se apunta, dale de alta en Personas y a partir de entonces sale en la lista.</p>
@@ -378,7 +388,7 @@ async function pickStore(){
 
 // ===== LÓGICA DE LA PÁGINA =====
 (function(){
-const APP_VERSION = "02/11 22:38";
+const APP_VERSION = "02/11 22:50";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;           // cuota mensual habitual (septiembre fue 25)
 const defAmount = () => Number($("p-default").value)||DEFAULT_AMOUNT;
@@ -440,15 +450,33 @@ function rosterFor(sid,date){
   return [...ids].map(id=>data.persons[id]||{id,name:id,active:false}).sort((a,b)=>a.name.localeCompare(b.name,"es"));
 }
 function renderRoster(){
-  const box=$("l-roster"); box.innerHTML="";
+  const box=$("l-roster"); box.innerHTML=""; const q=quotaInfo();
   rosterFor(curSessionId,$("l-date").value).forEach((p,i)=>{
     const l=document.createElement("label"); l.className="p";
     const c=document.createElement("input"); c.type="checkbox"; c.id="chk-"+p.id; c.value=p.id;
     c.addEventListener("change",()=>{ l.classList.toggle("on",c.checked); updCount(); saveDraft(); });
     l.append(c,document.createTextNode(p.name)); if(p.active===false){ const m=document.createElement("span"); m.className="pend"; m.style.color="var(--muted)"; m.textContent="baja"; l.append(m); }
-    if(asocOn() && p.active!==false && !isSocia(p,curSeasonKey())){ const m=document.createElement("span"); m.className="pend"; m.textContent="socia pendiente"; l.append(m); } box.append(l);
+    if(asocOn() && p.active!==false && !isSocia(p,curSeasonKey())){ const m=document.createElement("span"); m.className="pend"; m.textContent="socia pendiente"; l.append(m); }
+    if(q && p.active!==false && !q.rows[p.id]){ const m=document.createElement("span"); m.className="quota"; m.textContent="cuota"; m.title="Cuota de "+monthName(q.ym)+" pendiente"; l.append(m); }
+    box.append(l);
   });
+  renderQuotaBar(q);
   updCount();
+}
+// Cuota del mes de la sesión: solo cuando el cobro de ese mes ya ha empezado (hay al menos un pago apuntado).
+// Así a principios de mes no sale todo el mundo como pendiente.
+function quotaInfo(){
+  const ym=($("l-date").value||todayISO()).slice(0,7); if(seasonOf(ym)==="T1") return null;
+  const pg=data.pagos[ym]; const rows=(pg&&pg.rows)||{}; if(!Object.keys(rows).length) return null;
+  return {ym, rows};
+}
+function renderQuotaBar(q){
+  const box=$("l-quota"); if(!q){ box.hidden=true; return; }
+  const act=activePersons(); const paid=act.filter(p=>q.rows[p.id]).length; const pend=act.length-paid;
+  box.hidden=false;
+  box.innerHTML=`<span class="qtxt">Cuota de ${esc(monthName(q.ym))}</span><span class="qbar" aria-hidden="true"><i style="width:${act.length?Math.round(100*paid/act.length):0}%"></i></span><span class="qnum">${paid}/${act.length}</span>`;
+  box.setAttribute("aria-label",`Cuota de ${monthName(q.ym)}: ${paid} de ${act.length} pagadas${pend?", "+pend+" pendientes":""}. Toca para ir a Pagos.`);
+  box.onclick=()=>{ curMonth=q.ym; show("pagos"); };
 }
 const checked=()=>[...$("l-roster").querySelectorAll("input:checked")].map(c=>c.value);
 // Borrador: lo marcado se guarda en el móvil al instante y se recupera si se recarga antes de pulsar Guardar

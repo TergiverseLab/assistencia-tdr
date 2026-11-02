@@ -94,6 +94,7 @@ function SheetStore(url){
   function flush(){
     if (flushing) return flushing;
     flushing = (async()=>{
+      await null;                                // primero queda apuntado "enviando" (ver abajo)
       let q = queue();
       while (q.length){
         const op = q[0];
@@ -104,11 +105,13 @@ function SheetStore(url){
         catch(e){ if (e.red){ st.motivo = e.puente ? "puente" : "red"; break; } q = queue(); q.shift(); setQueue(q); st.errors.push({op, error:e.message}); if (st.onResult) st.onResult(op,null,e); }
       }
       if (st.onChange) st.onChange();
-    })().finally(()=>{ flushing=null; });
+    })().finally(()=>{ flushing=null; if (st.onChange) st.onChange(); });
+    if (st.onChange) st.onChange();              // empieza a enviar: la web enseña la barrita "Guardando en la hoja…"
     return flushing;
   }
   return Object.assign(st, {
     name:"sheet",
+    enviando(){ return !!flushing; },
     pending(){ return queue(); },
     cached(){ const c=ls.get(CK); return c&&c.data ? c.data : null; },
     async load(){

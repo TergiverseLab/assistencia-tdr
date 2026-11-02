@@ -187,3 +187,9 @@ textarea{font:inherit;font-size:.85rem;width:100%;min-height:140px;background:va
 .rsub{font:600 .82rem var(--display);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:10px 0 0}
 details.rses summary{cursor:pointer;color:var(--muted);font-size:.9rem;padding:4px 0}
 details.rses[open] summary{margin-bottom:6px}
+
+/* barrita de carga mientras se envía a la hoja */
+.carga{position:fixed;left:0;right:0;top:0;height:3px;z-index:20;overflow:hidden;background:transparent;pointer-events:none}
+.carga i{position:absolute;top:0;bottom:0;width:35%;background:var(--fg);border-radius:2px;animation:carga 1.1s ease-in-out infinite}
+@keyframes carga{0%{left:-35%}100%{left:100%}}
+@media (prefers-reduced-motion:reduce){.carga i{animation:none;left:0;width:100%;opacity:.4}}

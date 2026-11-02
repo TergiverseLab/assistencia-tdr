@@ -56,9 +56,7 @@ function renderSummary(){
   const nm=k=>(data.persons[k]||{name:k}).name;
   const tb=$("r-table").querySelector("tbody"); tb.innerHTML="";
   $("r-wrap").hidden=!conLista.length; $("r-nolista").hidden=!!conLista.length||!n;
-  $("r-nolista").textContent = (ctx.season==="T2"||ctx.season==="T3"||ctx.season==="all")
-    ? "Hasta el 4/11/2026 no se pasó lista persona por persona (solo se apuntaban las cuotas), así que de esas sesiones solo se sabe cuánta gente vino. Desde que se pasa lista en esta web, aquí se verá cuántas veces ha venido cada una."
-    : "En esta selección no hay sesiones con lista persona por persona.";
+  $("r-nolista").hidden=true; $("r-perstit").hidden=!conLista.length;   // sin listas por persona: esta parte no sale
   Object.keys(counts).sort((a,b)=>counts[b]-counts[a]||nm(a).localeCompare(nm(b),"es")).forEach(k=>{ const tr=document.createElement("tr"); tr.innerHTML=`<td>${esc(nm(k))}</td><td class="n">${counts[k]} de ${conLista.length}</td>`; tb.append(tr); });
   $("r-tablenote").textContent = !conLista.length ? "" : conLista.length===n ? `De las ${n} sesiones de esta selección.` : `Contando solo las ${conLista.length} sesiones en que se pasó lista persona por persona (de ${n}).`;
   const months=Object.keys(data.pagos).filter(inCtxMonth).sort(); // de más antiguo a más reciente

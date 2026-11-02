@@ -202,6 +202,12 @@ textarea{font:inherit;font-size:.85rem;width:100%;min-height:140px;background:va
 .rsub{font:600 .82rem var(--display);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:10px 0 0}
 details.rses summary{cursor:pointer;color:var(--muted);font-size:.9rem;padding:4px 0}
 details.rses[open] summary{margin-bottom:6px}
+
+/* barrita de carga mientras se envía a la hoja */
+.carga{position:fixed;left:0;right:0;top:0;height:3px;z-index:20;overflow:hidden;background:transparent;pointer-events:none}
+.carga i{position:absolute;top:0;bottom:0;width:35%;background:var(--fg);border-radius:2px;animation:carga 1.1s ease-in-out infinite}
+@keyframes carga{0%{left:-35%}100%{left:100%}}
+@media (prefers-reduced-motion:reduce){.carga i{animation:none;left:0;width:100%;opacity:.4}}
 </style>
 </head>
 <body>
@@ -225,6 +231,7 @@ details.rses[open] summary{margin-bottom:6px}
   </header>
   <div class="lf"><span>Un projecte de l'Associació Laboratori Línia de Fuga</span><div class="logo-lf" role="img" aria-label="Línia de Fuga"></div></div>
 
+  <div class="carga" id="carga" role="status" aria-label="Guardando en la hoja" hidden><i></i></div>
   <div class="banner" id="banner" hidden></div>
 
   <!-- PASAR LISTA -->
@@ -315,7 +322,7 @@ details.rses[open] summary{margin-bottom:6px}
       <div class="chart" id="r-chart-ses"></div>
       <details class="rses"><summary>Ver la lista de sesiones</summary><div class="scroll"><table id="r-sestable"><thead><tr><th>Sesión</th><th class="n">Personas</th></tr></thead><tbody></tbody></table></div></details>
       <p class="note" id="r-probes" hidden></p>
-      <h3 class="rsub">Cuántas veces ha venido cada persona</h3>
+      <h3 class="rsub" id="r-perstit">Cuántas veces ha venido cada persona</h3>
       <p class="note" id="r-nolista" hidden></p>
       <p class="note" id="r-tablenote"></p>
       <div class="scroll tall" id="r-wrap"><table id="r-table"><thead><tr><th>Persona</th><th class="n">Ha venido</th></tr></thead><tbody></tbody></table></div>
@@ -443,6 +450,7 @@ function SheetStore(url){
   function flush(){
     if (flushing) return flushing;
     flushing = (async()=>{
+      await null;                                // primero queda apuntado "enviando" (ver abajo)
       let q = queue();
       while (q.length){
         const op = q[0];
@@ -453,11 +461,13 @@ function SheetStore(url){
         catch(e){ if (e.red){ st.motivo = e.puente ? "puente" : "red"; break; } q = queue(); q.shift(); setQueue(q); st.errors.push({op, error:e.message}); if (st.onResult) st.onResult(op,null,e); }
       }
       if (st.onChange) st.onChange();
-    })().finally(()=>{ flushing=null; });
+    })().finally(()=>{ flushing=null; if (st.onChange) st.onChange(); });
+    if (st.onChange) st.onChange();              // empieza a enviar: la web enseña la barrita "Guardando en la hoja…"
     return flushing;
   }
   return Object.assign(st, {
     name:"sheet",
+    enviando(){ return !!flushing; },
     pending(){ return queue(); },
     cached(){ const c=ls.get(CK); return c&&c.data ? c.data : null; },
     async load(){
@@ -500,7 +510,7 @@ async function pickStore(){
 
 (function(){
 // ===== 1. BASE: utilidades, temporadas, navegación, botón Guardar =====
-const APP_VERSION = "02/11 23:59";
+const APP_VERSION = "03/11 00:02";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;          // cuota mensual habitual (septiembre fue 25)
 const $ = id => document.getElementById(id);
@@ -531,9 +541,11 @@ function activePersons(){ return Object.values(data.persons).filter(p=>p.active!
 // Asistencia: listas reales en la T1 (papel) y desde el 4/11/2026 (web). Entre medias, las sesiones se reconstruyeron por
 // cuotas: inscritas − 1,5 (nunca faltaban más de 3; criterio de Mario, 2/11/2026). Ninguna sesión sale a 0: las que no
 // tienen datos toman la asistencia de la sesión con datos más cercana de su temporada. Igual que en la hoja.
-const LISTAS_WEB_DESDE="2026-11-04";
-const sesConLista = k => { const s=data.sessions[k]; const d=s.date||k; return s.present.length+(s.others||[]).length>0 && (d<"2026-01-01"||d>=LISTAS_WEB_DESDE); };
-const sesAsisDirecta = k => { const s=data.sessions[k]; const n=s.present.length+(s.others||[]).length; if(!n) return null; return sesConLista(k) ? n : Math.max(0,n-1.5); };
+const LISTAS_WEB_DESDE="2026-11-01";  // desde aquí cada sesión se registra en la web: cuenta lo que pone, aunque sea 0
+const sesConLista = k => { const s=data.sessions[k]; const d=s.date||k; return d>=LISTAS_WEB_DESDE || (d<"2026-01-01" && s.present.length+(s.others||[]).length>0); };
+// Solo las sesiones ANTIGUAS sin datos (antes de usar la web) toman la cifra de la sesión más cercana.
+// Las registradas con la web cuentan exactamente lo que pone, aunque sea 0.
+const sesAsisDirecta = k => { const s=data.sessions[k]; const d=s.date||k; const n=s.present.length+(s.others||[]).length; if(d>=LISTAS_WEB_DESDE) return n; if(!n) return null; return sesConLista(k) ? n : Math.max(0,n-1.5); };
 // grupo: si se está mirando un grupo (T1 matí / T1 tarda), la estimación sale de las sesiones de ese grupo, como en la hoja
 const sesAsistencia = (k, grupo) => { const v=sesAsisDirecta(k); if(v!=null) return v;
   const d0=Date.parse((data.sessions[k].date||k)+"T12:00:00"); const se=sesSeason(k); let best=null, bd=Infinity;
@@ -577,9 +589,13 @@ function botonEstado(estado,txt){ const b=$("save"); clearTimeout(flashT); b.cla
 $("save").addEventListener("click",()=>{ if(guardando) return; if(vistaActual==="lista") saveSession(); else if(vistaActual==="pagos") savePagos(); });
 
 // ---------- avisos de cambios pendientes de subir ----------
+// Aviso de cambios esperando: SOLO si un envío ha fallado de verdad (sin internet o puente antiguo).
+// Mientras se está enviando, solo la barrita de carga de arriba ("Guardando en la hoja…").
 function updPendientes(){
   const n = store && store.pending ? store.pending().length : 0; const b=$("banner");
-  if(n){ b.hidden=false; b.className="banner warn"; b.innerHTML=`${esc(textoEspera())} <button class="btn ghost small" type="button" id="b-retry">Reintentar ahora</button>`;
+  const enviando = !!(store && store.enviando && store.enviando());
+  $("carga").hidden = !enviando;
+  if(n && !enviando && store.motivo){ b.hidden=false; b.className="banner warn"; b.innerHTML=`${esc(textoEspera())} <button class="btn ghost small" type="button" id="b-retry">Reintentar ahora</button>`;
     $("b-retry").onclick=async()=>{ $("b-retry").disabled=true; await store.retry(); updPendientes(); }; }
   else if(b.classList.contains("warn")){ b.hidden=true; b.className="banner"; b.textContent=""; }
 }
@@ -1092,9 +1108,7 @@ function renderSummary(){
   const nm=k=>(data.persons[k]||{name:k}).name;
   const tb=$("r-table").querySelector("tbody"); tb.innerHTML="";
   $("r-wrap").hidden=!conLista.length; $("r-nolista").hidden=!!conLista.length||!n;
-  $("r-nolista").textContent = (ctx.season==="T2"||ctx.season==="T3"||ctx.season==="all")
-    ? "Hasta el 4/11/2026 no se pasó lista persona por persona (solo se apuntaban las cuotas), así que de esas sesiones solo se sabe cuánta gente vino. Desde que se pasa lista en esta web, aquí se verá cuántas veces ha venido cada una."
-    : "En esta selección no hay sesiones con lista persona por persona.";
+  $("r-nolista").hidden=true; $("r-perstit").hidden=!conLista.length;   // sin listas por persona: esta parte no sale
   Object.keys(counts).sort((a,b)=>counts[b]-counts[a]||nm(a).localeCompare(nm(b),"es")).forEach(k=>{ const tr=document.createElement("tr"); tr.innerHTML=`<td>${esc(nm(k))}</td><td class="n">${counts[k]} de ${conLista.length}</td>`; tb.append(tr); });
   $("r-tablenote").textContent = !conLista.length ? "" : conLista.length===n ? `De las ${n} sesiones de esta selección.` : `Contando solo las ${conLista.length} sesiones en que se pasó lista persona por persona (de ${n}).`;
   const months=Object.keys(data.pagos).filter(inCtxMonth).sort(); // de más antiguo a más reciente

@@ -300,7 +300,7 @@ function opFitxa(d, ara){
 
 const WEB_URL  = "https://tergiverselab.github.io/assistencia-tdr/";
 const LOGO_URL = "https://tergiverselab.github.io/assistencia-tdr/icons/icon-512.png";
-const LLISTES_DIGITALS_DES_DE = "2026-11-04";  // desde aquí, cada sesión tiene lista real hecha con la web
+const LLISTES_DIGITALS_DES_DE = "2026-11-01";  // desde aquí, cada sesión se registra con la web: su número es el real, aunque sea 0
 const FALTES_ESTIMADES = 1.5;                   // T2-T3 sin lista: inscritas − 1,5 (nunca faltan más de 3; criterio de Mario, 2/11/2026)
 const HORES_SESSIO = 2;
 const TEMPORADES = [
@@ -330,8 +330,9 @@ function construirModel(rowsP, rowsS, rowsG, avui){
   const sessions = rowsS.filter(r=>r[0]).map(r=>{
     const date = fmtDate(r[1]); const present = llistaIds(r[3]); const altres = llistaIds(r[4]);
     let font;                                   // llista = lista real · inscrites = reconstruida por cuotas · sense = sin datos
-    if (present.length + altres.length === 0) font = "sense";
-    else if (date < "2026-01-01" || date >= LLISTES_DIGITALS_DES_DE) font = "llista";
+    if (date >= LLISTES_DIGITALS_DES_DE) font = "llista";         // registrada con la web: lo que pone, también 0
+    else if (present.length + altres.length === 0) font = "sense";
+    else if (date < "2026-01-01") font = "llista";
     else font = "inscrites";
     return {id:norm(r[0]), date, grup:String(r[2]||""), present, altres, font};
   }).filter(s=>/^\d{4}-\d{2}-\d{2}$/.test(s.date) && s.date <= avui)
@@ -345,7 +346,7 @@ function nomDe(m, pid){ return (m.persons[pid] || {nom:pid}).nom; }
 // asistencia de cada sesión: lista real = recuento; reconstruida por cuotas = inscritas − 1,5;
 // sin ningún dato = la de la sesión con datos más cercana del mismo conjunto (criterio de Mario, 2/11/2026: ninguna sesión a 0)
 function assistencies(ses){
-  const dir = s => { const n = s.present.length + s.altres.length; if (!n) return null; return s.font==="llista" ? n : Math.max(0, n-FALTES_ESTIMADES); };
+  const dir = s => { const n = s.present.length + s.altres.length; if (s.font==="llista" && s.date >= LLISTES_DIGITALS_DES_DE) return n; if (!n) return null; return s.font==="llista" ? n : Math.max(0, n-FALTES_ESTIMADES); };
   const t = s => Date.UTC(+s.date.slice(0,4), +s.date.slice(5,7)-1, +s.date.slice(8,10));
   const res = new Map();
   ses.forEach(s=>{ let v = dir(s);

@@ -30,9 +30,11 @@ function activePersons(){ return Object.values(data.persons).filter(p=>p.active!
 // Asistencia: listas reales en la T1 (papel) y desde el 4/11/2026 (web). Entre medias, las sesiones se reconstruyeron por
 // cuotas: inscritas − 1,5 (nunca faltaban más de 3; criterio de Mario, 2/11/2026). Ninguna sesión sale a 0: las que no
 // tienen datos toman la asistencia de la sesión con datos más cercana de su temporada. Igual que en la hoja.
-const LISTAS_WEB_DESDE="2026-11-04";
-const sesConLista = k => { const s=data.sessions[k]; const d=s.date||k; return s.present.length+(s.others||[]).length>0 && (d<"2026-01-01"||d>=LISTAS_WEB_DESDE); };
-const sesAsisDirecta = k => { const s=data.sessions[k]; const n=s.present.length+(s.others||[]).length; if(!n) return null; return sesConLista(k) ? n : Math.max(0,n-1.5); };
+const LISTAS_WEB_DESDE="2026-11-01";  // desde aquí cada sesión se registra en la web: cuenta lo que pone, aunque sea 0
+const sesConLista = k => { const s=data.sessions[k]; const d=s.date||k; return d>=LISTAS_WEB_DESDE || (d<"2026-01-01" && s.present.length+(s.others||[]).length>0); };
+// Solo las sesiones ANTIGUAS sin datos (antes de usar la web) toman la cifra de la sesión más cercana.
+// Las registradas con la web cuentan exactamente lo que pone, aunque sea 0.
+const sesAsisDirecta = k => { const s=data.sessions[k]; const d=s.date||k; const n=s.present.length+(s.others||[]).length; if(d>=LISTAS_WEB_DESDE) return n; if(!n) return null; return sesConLista(k) ? n : Math.max(0,n-1.5); };
 // grupo: si se está mirando un grupo (T1 matí / T1 tarda), la estimación sale de las sesiones de ese grupo, como en la hoja
 const sesAsistencia = (k, grupo) => { const v=sesAsisDirecta(k); if(v!=null) return v;
   const d0=Date.parse((data.sessions[k].date||k)+"T12:00:00"); const se=sesSeason(k); let best=null, bd=Infinity;
@@ -76,9 +78,13 @@ function botonEstado(estado,txt){ const b=$("save"); clearTimeout(flashT); b.cla
 $("save").addEventListener("click",()=>{ if(guardando) return; if(vistaActual==="lista") saveSession(); else if(vistaActual==="pagos") savePagos(); });
 
 // ---------- avisos de cambios pendientes de subir ----------
+// Aviso de cambios esperando: SOLO si un envío ha fallado de verdad (sin internet o puente antiguo).
+// Mientras se está enviando, solo la barrita de carga de arriba ("Guardando en la hoja…").
 function updPendientes(){
   const n = store && store.pending ? store.pending().length : 0; const b=$("banner");
-  if(n){ b.hidden=false; b.className="banner warn"; b.innerHTML=`${esc(textoEspera())} <button class="btn ghost small" type="button" id="b-retry">Reintentar ahora</button>`;
+  const enviando = !!(store && store.enviando && store.enviando());
+  $("carga").hidden = !enviando;
+  if(n && !enviando && store.motivo){ b.hidden=false; b.className="banner warn"; b.innerHTML=`${esc(textoEspera())} <button class="btn ghost small" type="button" id="b-retry">Reintentar ahora</button>`;
     $("b-retry").onclick=async()=>{ $("b-retry").disabled=true; await store.retry(); updPendientes(); }; }
   else if(b.classList.contains("warn")){ b.hidden=true; b.className="banner"; b.textContent=""; }
 }

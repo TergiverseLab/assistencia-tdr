@@ -37,3 +37,16 @@ window.addEventListener("online",async()=>{ if(store){ await store.retry(); refr
   catch(e){ if(!cache){ banner("No se han podido cargar los datos. Comprueba la conexión y recarga.","err"); setDate(todayISO()); } else updPendientes(); }
   if(store.name==="local") banner("Esta copia guarda solo en este dispositivo. No está conectada a la hoja del Drive.","err");
 })();
+
+// ===== Versión nueva de la web: el móvil guarda la página hasta 10 minutos. Al abrirla o volver a ella se mira
+// si hay una versión más nueva y, si la hay, se carga sola (lo marcado sin guardar está en el borrador del móvil).
+async function mirarVersionNueva(){
+  if(location.protocol!=="https:" || !/github\.io$/.test(location.hostname)) return;
+  try{
+    const t=await (await fetch(location.pathname+"?comprobar="+Date.now(),{cache:"no-store"})).text();
+    const v=(t.match(/const APP_VERSION = "([^"]+)"/)||[])[1];
+    if(v && v!==APP_VERSION && !/\{\{/.test(v)){ saveDraft(); location.replace(location.pathname+"?v="+encodeURIComponent(v)); }
+  }catch(e){}
+}
+mirarVersionNueva();
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") mirarVersionNueva(); });

@@ -491,7 +491,7 @@ async function pickStore(){
 
 (function(){
 // ===== 1. BASE: utilidades, temporadas, navegación, botón Guardar =====
-const APP_VERSION = "02/11 23:47";
+const APP_VERSION = "02/11 23:49";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;          // cuota mensual habitual (septiembre fue 25)
 const $ = id => document.getElementById(id);
@@ -1200,6 +1200,19 @@ window.addEventListener("online",async()=>{ if(store){ await store.retry(); refr
   catch(e){ if(!cache){ banner("No se han podido cargar los datos. Comprueba la conexión y recarga.","err"); setDate(todayISO()); } else updPendientes(); }
   if(store.name==="local") banner("Esta copia guarda solo en este dispositivo. No está conectada a la hoja del Drive.","err");
 })();
+
+// ===== Versión nueva de la web: el móvil guarda la página hasta 10 minutos. Al abrirla o volver a ella se mira
+// si hay una versión más nueva y, si la hay, se carga sola (lo marcado sin guardar está en el borrador del móvil).
+async function mirarVersionNueva(){
+  if(location.protocol!=="https:" || !/github\.io$/.test(location.hostname)) return;
+  try{
+    const t=await (await fetch(location.pathname+"?comprobar="+Date.now(),{cache:"no-store"})).text();
+    const v=(t.match(/const APP_VERSION = "([^"]+)"/)||[])[1];
+    if(v && v!==APP_VERSION && !/\{\{/.test(v)){ saveDraft(); location.replace(location.pathname+"?v="+encodeURIComponent(v)); }
+  }catch(e){}
+}
+mirarVersionNueva();
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") mirarVersionNueva(); });
 
 // ===== 8. EXPORTAR a Excel según lo que se está mirando en Resumen =====
 // "Todas las temporadas" → la hoja de Google entera (la de verdad). Una temporada o un grupo → un Excel solo con eso,

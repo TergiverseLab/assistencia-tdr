@@ -126,6 +126,7 @@ tr.tap{cursor:pointer}
 .ses summary::-webkit-details-marker{display:none}
 .ses .d{font-size:1.05rem} .ses .d small{color:var(--muted);font-size:.8rem;margin-left:6px}
 .ses .c{font:700 1.2rem var(--display);font-variant-numeric:tabular-nums}
+.ses .c .nolist{font:400 .8rem var(--body);color:var(--muted)}
 .ses .body{padding:0 14px 12px;color:var(--muted);font-size:.95rem;line-height:1.5}
 .ses .body .btn{margin-top:8px}
 /* personas */
@@ -388,7 +389,7 @@ async function pickStore(){
 
 // ===== LÓGICA DE LA PÁGINA =====
 (function(){
-const APP_VERSION = "02/11 22:50";
+const APP_VERSION = "02/11 22:52";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;           // cuota mensual habitual (septiembre fue 25)
 const defAmount = () => Number($("p-default").value)||DEFAULT_AMOUNT;
@@ -629,13 +630,13 @@ function renderSessions(){
   $("s-month").textContent=monthName(sesMonth); $("s-pick").value=sesMonth;
   const ids=all.filter(k=>(data.sessions[k].date||k).slice(0,7)===sesMonth);
   const list=$("s-list"); list.innerHTML=""; $("s-empty").hidden=ids.length>0; $("s-empty").textContent = all.length ? "Ningún registro de sesión en este mes. Usa ‹ › o el calendario." : (Object.keys(data.sessions).length ? `Todavía no hay sesiones guardadas en ${seasonLabel(ctx.season)}. Elige otra temporada arriba (por ejemplo T1) para ver las anteriores.` : "Todavía no se ha pasado lista ninguna vez.");
-  const tot=ids.reduce((a,k)=>a+data.sessions[k].present.length+(data.sessions[k].others||[]).length,0);
-  $("s-sum").textContent = ids.length ? `${ids.length} sesiones · media ${(tot/ids.length).toFixed(1)} asistentes` : "";
+  const asis=ids.map(sesAsistencia).filter(v=>v!=null);
+  $("s-sum").textContent = ids.length ? `${ids.length} ${ids.length===1?"sesión":"sesiones"}`+(asis.length?` · media ${(asis.reduce((a,b)=>a+b,0)/asis.length).toFixed(1).replace(".",",")} por sesión`:" · sin lista de asistencia") : "";
   ids.forEach(k=>{
     const s=data.sessions[k]; const dt=s.date||k; const d=new Date(dt+"T12:00:00"); const n=s.present.length+(s.others||[]).length;
     const names=s.present.map(pid=>(data.persons[pid]||{name:pid}).name).sort((a,b)=>a.localeCompare(b,"es")).concat((s.others||[]).map(o=>o+" (prueba)"));
     const el=document.createElement("details"); el.className="ses";
-    el.innerHTML=`<summary><span class="d">${DIAS[d.getDay()].slice(0,3)} ${fmt(dt)}${multiGroup?`<small>${esc("grup "+sesGroup(k))}</small>`:""}${s.estimated?`<small>per quotes</small>`:""}</span><span class="c">${n}</span></summary>
+    el.innerHTML=`<summary><span class="d">${DIAS[d.getDay()].slice(0,3)} ${fmt(dt)}${multiGroup?`<small>${esc("grup "+sesGroup(k))}</small>`:""}${n&&!sesConLista(k)?`<small>sin lista</small>`:""}</span><span class="c">${n?(sesConLista(k)?n:Math.round(sesAsistencia(k))):`<small class="nolist">sin lista</small>`}</span></summary>
       <div class="body">${names.map(esc).join(", ")||"—"}<br><button class="btn ghost small" type="button">Corregir esta sesión</button></div>`;
     el.querySelector("button").addEventListener("click",()=>{ setDate(dt,k); show("lista"); });
     list.append(el);

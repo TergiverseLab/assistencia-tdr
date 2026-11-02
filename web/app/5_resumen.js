@@ -16,16 +16,22 @@ function bars(el, items, fmtV){ // items: [{label, value}], una sola serie, barr
 // FILTRO COMÚN: una sola selección (temporada + grupo) compartida por Personas y Resumen
 const ctx={season:null,group:"all"};
 function ctxSeasons(){ const set=new Set([...Object.keys(data.sessions).map(sesSeason),...Object.keys(data.pagos).map(seasonOf)]); Object.values(data.persons).forEach(p=>{ if(p.active!==false) set.add(curSeasonKey()); }); return [...set].sort().reverse(); }
-function ctxGroups(){ const g=new Set(); Object.keys(data.sessions).forEach(k=>{ if((ctx.season==="all"||sesSeason(k)===ctx.season) && data.sessions[k].group) g.add(data.sessions[k].group); }); return g.size>1 ? [...g].sort() : []; }
+// Un solo desplegable: las temporadas con dos grupos (la T1) salen ya separadas: "T1 matí", "T1 tarda".
+function gruposDe(season){ const g=new Set(); Object.keys(data.sessions).forEach(k=>{ if(sesSeason(k)===season && data.sessions[k].group) g.add(data.sessions[k].group); }); return [...g].sort(); }
+function opcionesCtx(){ const o=[]; ctxSeasons().forEach(s=>{ const gs=gruposDe(s);
+  if(gs.length>1) gs.forEach(g=>o.push({v:s+"|"+g, l:seasonLabel(s).replace(/^(\S+)/,"$1 "+g)})); else o.push({v:s, l:seasonLabel(s)}); }); return o; }
 let multiGroup=false;
 function renderCtx(){
-  if(ctx.season===null){ const ss=ctxSeasons(); ctx.season = ss.includes(curSeasonKey())?curSeasonKey():(ss[0]||"all"); }
-  const seasons=ctxSeasons(); const groups=ctxGroups(); multiGroup=groups.length>1; if(!groups.includes(ctx.group)) ctx.group="all";
-  document.querySelectorAll('select[data-ctx="season"]').forEach(sel=>{ sel.innerHTML='<option value="all">Todas las temporadas</option>'+seasons.map(s=>`<option value="${s}">${esc(seasonLabel(s))}</option>`).join(""); sel.value=ctx.season; });
-  document.querySelectorAll('[data-ctx-groupwrap]').forEach(w=>w.hidden=groups.length===0);
-  document.querySelectorAll('select[data-ctx="group"]').forEach(sel=>{ sel.innerHTML='<option value="all">Todos los grupos</option>'+groups.map(g=>`<option value="${g}">${esc("grup "+g)}</option>`).join(""); sel.value=ctx.group; });
+  const ops=opcionesCtx();
+  if(ctx.season===null){ const v=ops.find(o=>o.v.split("|")[0]===curSeasonKey()); const x=(v||ops[0]||{v:"all"}).v.split("|"); ctx.season=x[0]; ctx.group=x[1]||"all"; }
+  const val = ctx.season==="all" ? "all" : (ctx.group!=="all" ? ctx.season+"|"+ctx.group : ctx.season);
+  if(ctx.season!=="all" && ctx.group==="all" && gruposDe(ctx.season).length>1){ ctx.group=gruposDe(ctx.season)[0]; } // la T1 siempre por grupo
+  multiGroup=false;
+  document.querySelectorAll('select[data-ctx="season"]').forEach(sel=>{ sel.innerHTML='<option value="all">Todas las temporadas</option>'+ops.map(o=>`<option value="${esc(o.v)}">${esc(o.l)}</option>`).join("");
+    sel.value = ctx.season==="all" ? "all" : (ctx.group!=="all" ? ctx.season+"|"+ctx.group : ctx.season); });
+  document.querySelectorAll('[data-ctx-groupwrap]').forEach(w=>w.hidden=true);
 }
-document.querySelectorAll('select[data-ctx]').forEach(sel=>sel.addEventListener("change",()=>{ if(sel.dataset.ctx==="season"){ ctx.season=sel.value; ctx.group="all"; } else ctx.group=sel.value; renderCtx(); if(vistaActual==="pers") renderPersons(); if(vistaActual==="res") renderSummary(); }));
+document.querySelectorAll('select[data-ctx="season"]').forEach(sel=>sel.addEventListener("change",()=>{ const x=sel.value.split("|"); ctx.season=x[0]; ctx.group=x[1]||"all"; renderCtx(); if(vistaActual==="pers") renderPersons(); if(vistaActual==="res") renderSummary(); }));
 const inCtxSession = k => (ctx.season==="all"||sesSeason(k)===ctx.season) && (ctx.group==="all"||sesGroup(k)===ctx.group||(!data.sessions[k].group&&sesSeason(k)==="T1")); // T1: los ensayos sin grupo salen en los dos
 const inCtxMonth = ym => ctx.season==="all"||seasonOf(ym)===ctx.season;
 function renderSummary(){
@@ -35,11 +41,11 @@ function renderSummary(){
   // participantes: quien vino a alguna sesión o pagó algún mes de la selección
   const gente=new Set(); ids.forEach(id=>data.sessions[id].present.forEach(p=>gente.add(p)));
   if(ctx.group==="all") Object.keys(data.pagos).filter(inCtxMonth).forEach(m=>Object.keys(data.pagos[m].rows||{}).forEach(p=>gente.add(p)));
-  const asis=ids.map(sesAsistencia).filter(v=>v!=null); const media=asis.length?asis.reduce((a,b)=>a+b,0)/asis.length:0;
+  const asis=ids.map(id=>sesAsistencia(id,ctx.group)).filter(v=>v!=null); const media=asis.length?asis.reduce((a,b)=>a+b,0)/asis.length:0;
   $("r-sess").textContent=n; $("r-avg").textContent=asis.length?media.toFixed(1).replace(".",","):"–"; $("r-new").textContent=gente.size;
   const probes=new Set(); ids.forEach(id=>(data.sessions[id].others||[]).forEach(o=>probes.add(o.toLowerCase())));
   $("r-probes").hidden=!probes.size; $("r-probes").textContent=`${probes.size} ${probes.size===1?"persona ha":"personas han"} venido a probar.`;
-  bars($("r-chart-ses"), ids.map(id=>({label:fmt(data.sessions[id].date||id).slice(0,5)+(multiGroup&&data.sessions[id].group?" "+data.sessions[id].group[0]:""), value:Math.round(sesAsistencia(id)||0)})), v=>String(v));
+  bars($("r-chart-ses"), ids.map(id=>({label:fmt(data.sessions[id].date||id).slice(0,5)+(multiGroup&&data.sessions[id].group?" "+data.sessions[id].group[0]:""), value:Math.round(sesAsistencia(id,ctx.group)||0)})), v=>String(v));
   // por persona: solo sesiones con lista real
   const conLista=ids.filter(sesConLista); const counts={}; conLista.forEach(id=>data.sessions[id].present.forEach(k=>counts[k]=(counts[k]||0)+1));
   const nm=k=>(data.persons[k]||{name:k}).name;

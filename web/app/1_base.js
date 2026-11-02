@@ -33,9 +33,10 @@ function activePersons(){ return Object.values(data.persons).filter(p=>p.active!
 const LISTAS_WEB_DESDE="2026-11-04";
 const sesConLista = k => { const s=data.sessions[k]; const d=s.date||k; return s.present.length+(s.others||[]).length>0 && (d<"2026-01-01"||d>=LISTAS_WEB_DESDE); };
 const sesAsisDirecta = k => { const s=data.sessions[k]; const n=s.present.length+(s.others||[]).length; if(!n) return null; return sesConLista(k) ? n : Math.max(0,n-1.5); };
-const sesAsistencia = k => { const v=sesAsisDirecta(k); if(v!=null) return v;
+// grupo: si se está mirando un grupo (T1 matí / T1 tarda), la estimación sale de las sesiones de ese grupo, como en la hoja
+const sesAsistencia = (k, grupo) => { const v=sesAsisDirecta(k); if(v!=null) return v;
   const d0=Date.parse((data.sessions[k].date||k)+"T12:00:00"); const se=sesSeason(k); let best=null, bd=Infinity;
-  Object.keys(data.sessions).forEach(j=>{ if(j===k||sesSeason(j)!==se) return; const w=sesAsisDirecta(j); if(w==null) return; const dd=Math.abs(Date.parse((data.sessions[j].date||j)+"T12:00:00")-d0); if(dd<bd){ bd=dd; best=w; } });
+  Object.keys(data.sessions).forEach(j=>{ if(j===k||sesSeason(j)!==se) return; if(grupo && grupo!=="all" && data.sessions[j].group && data.sessions[j].group!==grupo) return; const w=sesAsisDirecta(j); if(w==null) return; const dd=Math.abs(Date.parse((data.sessions[j].date||j)+"T12:00:00")-d0); if(dd<bd){ bd=dd; best=w; } });
   return best; };
 
 // Bloqueo: lo pasado se ve cerrado. "Desbloquear para corregir" abre SOLO en este móvil y al instante; al guardar se vuelve a cerrar.

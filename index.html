@@ -73,6 +73,8 @@ input[type=date],input[type=text],input[type=number],input[type=month],select{fo
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .savebar .btn{pointer-events:auto;width:100%;max-width:600px;margin:0 auto;display:block;box-shadow:0 6px 18px rgba(0,0,0,.18);min-height:56px;font-size:1.1rem}
 .savebar[hidden]{display:none}
+.savebar .btn.saved{background:var(--soft);color:var(--fg);border:1.5px solid var(--line);box-shadow:none}
+.savebar .btn.failed{background:var(--paper);color:var(--bad);border:1.5px solid var(--bad);box-shadow:none}
 /* pestañas abajo */
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--paper);border-top:1px solid var(--line);
   padding-bottom:env(safe-area-inset-bottom,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
@@ -342,10 +344,14 @@ function SheetStore(url){
     async load(){
       try{ await flush(); }catch(e){}
       const r=await fetch(url+"?t="+Date.now()); const j=await r.json();
+      // La hoja puede devolver fechas en formato largo ("Mon Nov 02 2026 09:00:00 GMT+0100"); se normalizan a AAAA-MM-DD / AAAA-MM
+      const pad=n=>String(n).padStart(2,"0");
+      const isoD=v=>{ if(v==null||v==="") return ""; const s=String(v); if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; if(/^\d{4}-\d{2}$/.test(s)) return s+"-01"; const d=new Date(s); return isNaN(d)?s:`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
+      const isoM=v=>{ const s=isoD(v); return s.length>=7?s.slice(0,7):s; };
       const persons={},sessions={},pagos={};
-      (j.persons||[]).forEach(p=>persons[p.id]=p);
-      (j.sessions||[]).forEach(s=>sessions[s.id||s.date]=s);
-      (j.pagos||[]).forEach(p=>pagos[p.month]=p);
+      (j.persons||[]).forEach(p=>{ p.from=isoM(p.from); p.to=isoM(p.to); persons[p.id]=p; });
+      (j.sessions||[]).forEach(s=>{ s.date=isoD(s.date); if(!s.id||!/^\d{4}-\d{2}-\d{2}/.test(String(s.id))) s.id=s.date+(s.group==="matí"?"-m":s.group==="tarda"?"-t":""); sessions[s.id]=s; });
+      (j.pagos||[]).forEach(p=>{ p.month=isoM(p.month); Object.values(p.rows||{}).forEach(r=>r.date=isoD(r.date)); pagos[p.month]=p; });
       return {persons,sessions,pagos,settings:j.settings||{}};
     },
     saveSettings:obj=>send("settings",obj),
@@ -365,7 +371,7 @@ async function pickStore(){
 
 // ===== LÓGICA DE LA PÁGINA =====
 (function(){
-const APP_VERSION = "02/11 18:44";
+const APP_VERSION = "02/11 18:52";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;           // cuota mensual habitual (septiembre fue 25)
 const defAmount = () => Number($("p-default").value)||DEFAULT_AMOUNT;
@@ -431,18 +437,29 @@ function renderRoster(){
   rosterFor(curSessionId,$("l-date").value).forEach((p,i)=>{
     const l=document.createElement("label"); l.className="p";
     const c=document.createElement("input"); c.type="checkbox"; c.id="chk-"+p.id; c.value=p.id;
-    c.addEventListener("change",()=>{ l.classList.toggle("on",c.checked); updCount(); });
+    c.addEventListener("change",()=>{ l.classList.toggle("on",c.checked); updCount(); saveDraft(); });
     l.append(c,document.createTextNode(p.name)); if(p.active===false){ const m=document.createElement("span"); m.className="pend"; m.style.color="var(--muted)"; m.textContent="baja"; l.append(m); }
     if(asocOn() && p.active!==false && !isSocia(p,curSeasonKey())){ const m=document.createElement("span"); m.className="pend"; m.textContent="socia pendiente"; l.append(m); } box.append(l);
   });
   updCount();
 }
 const checked=()=>[...$("l-roster").querySelectorAll("input:checked")].map(c=>c.value);
+// Borrador: lo marcado se guarda en el móvil al instante y se recupera si se recarga antes de pulsar Guardar
+const draftKey=()=>"tdr-draft-"+($("l-date").value||"")+"-"+(curSessionId||"");
+function saveDraft(){ try{ localStorage.setItem(draftKey(),JSON.stringify({present:checked(),others:$("l-others").value,t:Date.now()})); }catch(e){} }
+function clearDraft(){ try{ localStorage.removeItem(draftKey()); }catch(e){} }
+function readDraft(){ try{ return JSON.parse(localStorage.getItem(draftKey())||"null"); }catch(e){ return null; } }
+function applyDraft(){
+  const d=readDraft(); if(!d) return false; const s=curSessionId?data.sessions[curSessionId]:null;
+  if(s && s.savedAt && Date.parse(s.savedAt)>=d.t){ clearDraft(); return false; } // ya guardado después del borrador
+  $("l-roster").querySelectorAll("input").forEach(c=>{ c.checked=d.present.includes(c.value); c.parentElement.classList.toggle("on",c.checked); });
+  $("l-others").value=d.others||""; updCount(); setStatus("l-status","Recuperado lo que tenías marcado sin guardar. Pulsa Guardar cuando termines.","ok"); return true;
+}
 const others=()=>$("l-others").value.split(",").map(s=>s.trim()).filter(Boolean);
 function updCount(){ $("l-count").textContent=checked().length+others().length; }
-$("l-others").addEventListener("input",updCount);
-$("l-all").addEventListener("click",()=>{ $("l-roster").querySelectorAll("input").forEach(c=>{c.checked=true;c.parentElement.classList.add("on");}); updCount(); });
-$("l-clear").addEventListener("click",()=>{ $("l-roster").querySelectorAll("input").forEach(c=>{c.checked=false;c.parentElement.classList.remove("on");}); $("l-others").value=""; updCount(); setStatus("l-status",""); });
+$("l-others").addEventListener("input",()=>{ updCount(); saveDraft(); });
+$("l-all").addEventListener("click",()=>{ $("l-roster").querySelectorAll("input").forEach(c=>{c.checked=true;c.parentElement.classList.add("on");}); updCount(); saveDraft(); });
+$("l-clear").addEventListener("click",()=>{ $("l-roster").querySelectorAll("input").forEach(c=>{c.checked=false;c.parentElement.classList.remove("on");}); $("l-others").value=""; updCount(); setStatus("l-status",""); clearDraft(); });
 const DIAS=["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
 function setDate(iso, sid){
   $("l-date").value=iso; const d=new Date(iso+"T12:00:00");
@@ -452,7 +469,7 @@ function setDate(iso, sid){
   // selector de grupo cuando esa fecha tiene sesiones por grupo (T1)
   $("l-grouprow").hidden=grouped.length<2 && !(grouped.length===1);
   if(grouped.length){ $("l-group").innerHTML=grouped.map(k=>`<option value="${k}">grup ${esc(sesGroup(k))} · ${data.sessions[k].present.length}</option>`).join(""); $("l-group").value=curSessionId; }
-  renderRoster(); loadSession(curSessionId); applySesLock();
+  renderRoster(); loadSession(curSessionId); applySesLock(); if(!isSesLocked(curSessionId)) applyDraft();
 }
 function applySesLock(){
   const sid=curSessionId; const has=!!(sid&&data.sessions[sid]); const locked=isSesLocked(sid);
@@ -467,7 +484,7 @@ $("l-lock").addEventListener("click",async()=>{
   $("l-lock").disabled=true; try{ await store.saveSession(doc); data.sessions[curSessionId]=doc; }catch(e){ if(e.queued) data.sessions[curSessionId]=doc; }
   $("l-lock").disabled=false; applySesLock(); setStatus("l-status", nowLocked?"Sesión desbloqueada: corrige y guarda.":"Sesión cerrada.","ok");
 });
-$("l-group").addEventListener("change",()=>{ curSessionId=$("l-group").value; renderRoster(); loadSession(curSessionId); applySesLock(); });
+$("l-group").addEventListener("change",()=>{ curSessionId=$("l-group").value; renderRoster(); loadSession(curSessionId); applySesLock(); if(!isSesLocked(curSessionId)) applyDraft(); });
 // ‹ › : salta a la sesión registrada anterior/siguiente (cualquier día de la semana). Si no hay más, al miércoles anterior/siguiente.
 function shiftWed(n){
   const cur=$("l-date").value||todayISO();
@@ -486,14 +503,16 @@ function loadSession(id){
   $("l-others").value=(s.others||[]).join(", "); updCount();
   setStatus("l-status",`Sesión del ${fmt(id)} cargada. Corrige y guarda.`);
 }
+let flashT=null;
+function flashSaved(txt,kind){ const b=$("save"); const orig=b.dataset.label||b.textContent; b.dataset.label=orig; b.textContent=txt; b.classList.remove("saved","failed"); b.classList.add(kind==="err"?"failed":"saved"); clearTimeout(flashT); flashT=setTimeout(()=>{ b.textContent=b.dataset.label; b.classList.remove("saved","failed"); },2500); }
 async function saveSession(){
   const id=$("l-date").value; if(!id){ setStatus("l-status","Falta la fecha.","err"); return; }
   const sid=curSessionId||id; const prev=data.sessions[sid]||{};
   const doc={id:sid,date:id,present:checked(),others:others(),nuevas:others().length,locked:id<todayISO(),unlocked:false,savedAt:new Date().toISOString()}; if(prev.group) doc.group=prev.group; // al corregir a mano deja de ser estimada
   $("save").disabled=true; setStatus("l-status","Guardando…");
   $("save").disabled=false;
-  try{ await store.saveSession(doc); data.sessions[sid]=doc; curSessionId=sid; setStatus("l-status",`Guardada: ${fmt(id)}${doc.group?" · grup "+doc.group:""}, ${doc.present.length+doc.others.length} asistentes.`,"ok"); }
-  catch(e){ data.sessions[sid]=doc; setStatus("l-status", e.queued ? "Sin conexión: guardada en el móvil, se enviará al recuperar la red." : "No se ha podido guardar. Inténtalo de nuevo.", e.queued?"ok":"err"); }
+  try{ await store.saveSession(doc); data.sessions[sid]=doc; curSessionId=sid; clearDraft(); setStatus("l-status",`Guardada: ${fmt(id)}${doc.group?" · grup "+doc.group:""}, ${doc.present.length+doc.others.length} asistentes.`,"ok"); flashSaved("Sesión guardada ✓"); }
+  catch(e){ data.sessions[sid]=doc; if(e.queued) clearDraft(); setStatus("l-status", e.queued ? "Sin conexión: guardada en el móvil, se enviará al recuperar la red." : "No se ha podido guardar. Inténtalo de nuevo.", e.queued?"ok":"err"); if(e.queued) flashSaved("Guardada en el móvil ✓"); else flashSaved("No se ha guardado","err"); }
   applySesLock();
 }
 
@@ -550,8 +569,8 @@ async function savePagos(){
   const socs=[...$("p-list").querySelectorAll(".tog.on[data-socid]")].map(b=>({id:b.dataset.socid,amount:Number($("p-list").querySelector(`input[data-socid="${b.dataset.socid}"]`).value)||SOCIA_AMOUNT}));
   try{ await store.savePago(doc); data.pagos[curMonth]=doc; dirtyPagos=false; msg=`Guardado ${monthName(curMonth)}: ${Object.keys(doc.rows).length} pagos.`;
     for(const sc of socs){ const p={...data.persons[sc.id]}; p.socia={...(p.socia||{}),[curSeasonKey()]:{amount:sc.amount,date:todayISO()}}; await store.savePerson(p); data.persons[p.id]=p; }
-    if(socs.length) msg+=` Cuotas de socia: ${socs.length}.`; }
-  catch(e){ data.pagos[curMonth]=doc; msg=e.queued?"Sin conexión: guardado en el móvil, se enviará después.":"No se ha podido guardar."; cls=e.queued?"ok":"err"; }
+    if(socs.length) msg+=` Cuotas de socia: ${socs.length}.`; flashSaved("Pagos guardados ✓"); }
+  catch(e){ data.pagos[curMonth]=doc; msg=e.queued?"Sin conexión: guardado en el móvil, se enviará después.":"No se ha podido guardar."; cls=e.queued?"ok":"err"; flashSaved(e.queued?"Guardado en el móvil ✓":"No se ha guardado",e.queued?"":"err"); }
   $("save").disabled=false; renderPagos(); setStatus("p-status",msg,cls);
 }
 

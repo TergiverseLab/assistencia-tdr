@@ -18,7 +18,8 @@ function sheet(key){
   return sh;
 }
 function rows(key){ const sh = sheet(key); const v = sh.getDataRange().getValues(); return v.slice(1); }
-function norm(x){ return (x instanceof Date) ? fmtDate(x) : String(x==null?"":x).trim(); }
+function isDate(x){ return !!x && typeof x==="object" && typeof x.getTime==="function"; }
+function norm(x){ return isDate(x) ? fmtDate(x) : String(x==null?"":x).trim(); }
 function upsert(key, keyCols, row){
   const sh = sheet(key); const v = sh.getDataRange().getValues();
   for (let i = 1; i < v.length; i++){
@@ -27,8 +28,8 @@ function upsert(key, keyCols, row){
   sh.appendRow(row);
 }
 function out(obj){ return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON); }
-function fmtDate(d){ return (d instanceof Date) ? Utilities.formatDate(d, "Europe/Madrid", "yyyy-MM-dd") : String(d||""); }
-function fmtMonth(d){ return (d instanceof Date) ? Utilities.formatDate(d, "Europe/Madrid", "yyyy-MM") : String(d||""); }
+function fmtDate(d){ return isDate(d) ? Utilities.formatDate(d, "Europe/Madrid", "yyyy-MM-dd") : String(d||""); }
+function fmtMonth(d){ return isDate(d) ? Utilities.formatDate(d, "Europe/Madrid", "yyyy-MM") : String(d||""); }
 
 // Lectura: la página pide todo al abrirse
 function doGet(){

@@ -12,6 +12,14 @@ const SHEET_URL = "{{SHEET_URL}}"; // se rellena en la versión de GitHub
 const slug = s => s.normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
 const ID_PERSONA = /^[a-z0-9-]+$/, ID_SESION = /^\d{4}-\d{2}-\d{2}(-[a-z]+)?$/, ID_MES = /^\d{4}-\d{2}$/;
 
+// "vienen a probar" también va por diferencias (othersAdd / othersRemove), sin mayúsculas/minúsculas
+const lc = x => String(x).toLowerCase();
+function othersTras(cur, d){
+  let o = (d.others!=null && d.othersAdd==null && d.othersRemove==null) ? d.others.slice() : cur.slice();
+  const fora=(d.othersRemove||[]).map(lc); o=o.filter(x=>!fora.includes(lc(x)));
+  (d.othersAdd||[]).forEach(x=>{ if(x && !o.some(y=>lc(y)===lc(x))) o.push(x); });
+  return o;
+}
 // ---- aplicar una operación sobre los datos del móvil (lo mismo que hace el puente en la hoja) ----
 function aplicarOp(data, op){
   const d = op.data;
@@ -20,7 +28,7 @@ function aplicarOp(data, op){
     const base = cur ? cur.present.slice() : [];
     const present = base.filter(p=>!(d.remove||[]).includes(p)); (d.add||[]).forEach(p=>{ if(!present.includes(p)) present.push(p); });
     data.sessions[d.id] = {id:d.id, date:d.date||(cur&&cur.date)||d.id.slice(0,10), group:d.group!=null?d.group:((cur&&cur.group)||""), present,
-                           others: d.others!=null ? d.others.slice() : ((cur&&cur.others)||[]), savedAt:(cur&&cur.savedAt)||""};
+                           others: othersTras((cur&&cur.others)||[], d), savedAt:(cur&&cur.savedAt)||""};
   } else if (op.action === "pagaments"){
     const m = data.pagos[d.month] || (data.pagos[d.month] = {month:d.month, rows:{}});
     (d.unset||[]).forEach(pid=>{ delete m.rows[pid]; });
@@ -37,12 +45,17 @@ function fundirOps(a, b){
   const x = JSON.parse(JSON.stringify(a.data)), y = b.data;
   if (a.action === "sessio"){
     const add = new Set(x.add||[]), rem = new Set(x.remove||[]);
-    (y.add||[]).forEach(p=>{ rem.delete(p); add.add(p); }); (y.remove||[]).forEach(p=>{ add.delete(p); rem.add(p); });
-    x.add=[...add]; x.remove=[...rem]; if (y.others!=null) x.others=y.others; if (y.date) x.date=y.date; if (y.group!=null) x.group=y.group;
+    // quitar a alguien que solo estaba por un cambio propio aún sin subir = deshacer ese cambio (no borrar en la hoja)
+    (y.add||[]).forEach(p=>{ if(rem.has(p)) rem.delete(p); else add.add(p); }); (y.remove||[]).forEach(p=>{ if(add.has(p)) add.delete(p); else rem.add(p); });
+    x.add=[...add]; x.remove=[...rem];
+    const oa=new Map((x.othersAdd||[]).map(o=>[lc(o),o])), or=new Map((x.othersRemove||[]).map(o=>[lc(o),o]));
+    (y.othersAdd||[]).forEach(o=>{ if(or.has(lc(o))) or.delete(lc(o)); else oa.set(lc(o),o); }); (y.othersRemove||[]).forEach(o=>{ if(oa.has(lc(o))) oa.delete(lc(o)); else or.set(lc(o),o); });
+    x.othersAdd=[...oa.values()]; x.othersRemove=[...or.values()]; if (y.others!=null) x.others=y.others; if (y.date) x.date=y.date; if (y.group!=null) x.group=y.group;
   } else if (a.action === "pagaments"){
-    x.set = x.set||{}; const uns = new Set(x.unset||[]);
-    Object.keys(y.set||{}).forEach(pid=>{ uns.delete(pid); x.set[pid]=y.set[pid]; }); (y.unset||[]).forEach(pid=>{ delete x.set[pid]; uns.add(pid); });
-    x.unset=[...uns];
+    x.set = x.set||{}; const uns = new Set(x.unset||[]), nous = new Set(x.nous||[]);
+    Object.keys(y.set||{}).forEach(pid=>{ if(!uns.has(pid) && (y.nous||[]).includes(pid)) nous.add(pid); uns.delete(pid); x.set[pid]=y.set[pid]; });
+    (y.unset||[]).forEach(pid=>{ const propio=nous.has(pid); delete x.set[pid]; nous.delete(pid); if(!propio) uns.add(pid); }); // un pago propio aún sin subir se deshace
+    x.unset=[...uns]; x.nous=[...nous];
   } else if (a.action === "persona"){ x.set = Object.assign({}, x.set, y.set); }
   else if (a.action === "mes"){ x.tancat = y.tancat; }
   return {action:a.action, key:a.key, data:x, t:b.t};
@@ -75,14 +88,17 @@ function SheetStore(url){
     if (!j.ok) throw Object.assign(new Error(j.error||"error del servidor"),{red:!!j.retry || /desconocida/.test(j.error||"")});
     return j;
   }
-  let flushing = null;
+  let flushing = null; const leyendo = [];
   function flush(){
     if (flushing) return flushing;
     flushing = (async()=>{
       let q = queue();
       while (q.length){
         const op = q[0];
-        try { const res = await post(op); q = queue(); q.shift(); setQueue(q); st.ultimo[op.key] = res; if (st.onResult) st.onResult(op,res); }
+        try { const res = await post(op); q = queue(); q.shift(); setQueue(q); st.ultimo[op.key] = res;
+          leyendo.forEach(l=>l.push(op));                                    // por si una lectura en curso trae datos de antes
+          const c=ls.get(CK); if(c&&c.data){ aplicarOp(c.data,op); ls.set(CK,c); } // la copia del móvil, al día
+          if (st.onResult) st.onResult(op,res); }
         catch(e){ if (e.red) break; q = queue(); q.shift(); setQueue(q); st.errors.push({op, error:e.message}); if (st.onResult) st.onResult(op,null,e); }
       }
       if (st.onChange) st.onChange();
@@ -95,10 +111,13 @@ function SheetStore(url){
     cached(){ const c=ls.get(CK); return c&&c.data ? c.data : null; },
     async load(){
       await flush().catch(()=>{});
-      const r=await fetch(url+"?t="+Date.now()); const j=await r.json(); if(!j.ok) throw new Error(j.error||"error");
-      const data=normalizar(j); ls.set(CK,{t:Date.now(),data});
-      queue().forEach(op=>aplicarOp(data,op)); // lo pendiente de subir se ve igualmente
-      return data;
+      const hechas=[]; leyendo.push(hechas);
+      try {
+        const r=await fetch(url+"?t="+Date.now()); const j=await r.json(); if(!j.ok) throw new Error(j.error||"error");
+        const data=normalizar(j); hechas.forEach(op=>aplicarOp(data,op)); ls.set(CK,{t:Date.now(),data:JSON.parse(JSON.stringify(data))});
+        queue().forEach(op=>aplicarOp(data,op)); // lo pendiente de subir se ve igualmente
+        return data;
+      } finally { leyendo.splice(leyendo.indexOf(hechas),1); }
     },
     // apunta la operación en la cola y la envía (después de las anteriores). Devuelve la respuesta del puente,
     // o {encola:true} si no hay red (se enviará sola). Lanza error si el puente la rechaza.

@@ -10,6 +10,7 @@ const SHEETS = {
   pagos:    ["dades · Pagaments", ["mes","persona (id)","import","data pagament","actualitzat"], "Pagaments"],
   settings: ["dades · Config",    ["clau","valor","actualitzat"], "Config"],
   registre: ["dades · Registre",  ["data","acció","referència","detall"], ""],
+  fitxes:   ["dades · Fitxes",    ["id","DNI","data de naixement","telèfon","email","adreça","actualitzat"], ""], // datos personales: solo con clave
 };
 
 function sheet(key){
@@ -20,6 +21,8 @@ function sheet(key){
   if (!sh){
     sh = ss.insertSheet(name); sh.appendRow(header); sh.setFrozenRows(1);
     if (key === "sessions") sh.getRange(1, 1, sh.getMaxRows(), 1).setNumberFormat("@"); // ids como texto, no fechas
+    if (key === "registre") sh.getRange(1, 3, sh.getMaxRows(), 1).setNumberFormat("@");
+    if (key === "fitxes") sh.getRange(1, 1, sh.getMaxRows(), 6).setNumberFormat("@");
   }
   return sh;
 }
@@ -51,14 +54,18 @@ function llegirTot(){
     byMonth[m].rows[String(r[1])] = {amount:Number(r[2])||0, date:fmtDate(r[3]), savedAt:iso(r[4])}; });
   const settings = {}; rows("settings").filter(r=>r[0]).forEach(r=>{ try{ settings[String(r[0])] = JSON.parse(r[1]); }catch(e){ settings[String(r[0])] = r[1]; } });
   const reg = rows("registre").filter(r=>r[0]);
-  const registre = reg.slice(-400).reverse().map(r=>({ t:iso(r[0]), accio:String(r[1]), ref:String(r[2]), text:String(r[3]) }));
+  const refReg = r=>{ const a = String(r[1]); return a==="sessio" ? norm(r[2]) : (a==="pagaments"||a==="mes") ? fmtMonth(r[2]) : String(r[2]); };
+  const registre = reg.slice(-400).reverse().map(r=>({ t:iso(r[0]), accio:String(r[1]), ref:refReg(r), text:String(r[3]) }));
   return { ok:true, persons, sessions, pagos:Object.values(byMonth), settings, registre };
 }
+// La caché va por versión: cada guardado sube la versión, así que una lectura lenta que empezó antes de un
+// guardado se queda en una versión que ya nadie pide (nunca se sirven datos viejos).
+function versio(){ return PropertiesService.getScriptProperties().getProperty("versio") || "0"; }
 function doGet(){
-  const cache = CacheService.getScriptCache(); const hit = cache.get("tot");
+  const cache = CacheService.getScriptCache(); const k = "tot:" + versio(); const hit = cache.get(k);
   if (hit) return outText(hit);
   const json = JSON.stringify(llegirTot());
-  if (json.length < 95000) cache.put("tot", json, 21600);
+  if (json.length < 90000) try { cache.put(k, json, 21600); } catch(e) {}
   return outText(json);
 }
 
@@ -68,10 +75,13 @@ function doPost(e){
   try { lock.waitLock(20000); } catch(err) { return out({ok:false, error:"ocupado", retry:true}); }
   try{
     const body = JSON.parse(e.postData.contents); const d = body.data || {}; const ara = new Date(); const res = {ok:true};
+    validar(body.action, d);
+    if (body.action === "fitxes"){ const nova = comprovarClau(d) === "nueva"; return out({ok:true, nova, fitxes:llegirFitxes()}); } // solo lectura
     if (body.action === "sessio") res.session = opSessio(d, ara);
     else if (body.action === "pagaments") res.pagos = opPagaments(d, ara);
     else if (body.action === "persona") res.person = opPersona(d, ara);
     else if (body.action === "mes") res.mes = opMes(d, ara);
+    else if (body.action === "fitxa"){ comprovarClau(d); res.fitxa = opFitxa(d, ara); }
     // acciones de versiones anteriores de la web (por si un móvil tiene la página vieja abierta)
     else if (body.action === "session"){ const id = d.id || d.date; opSessio({id, date:d.date, group:d.group||"", add:d.present||[], remove:[], others:d.others||[]}, ara); }
     else if (body.action === "person"){ opPersona({id:d.id, set:{name:d.name, active:d.active!==false, from:d.from||"", to:d.to||"", socia:d.socia||{}}}, ara); }
@@ -83,7 +93,8 @@ function doPost(e){
     }
     else if (body.action === "settings"){ Object.keys(d||{}).forEach(k => upsert("settings", [0], [k, JSON.stringify(d[k]), ara])); }
     else return out({ok:false, error:"acción desconocida"});
-    CacheService.getScriptCache().remove("tot");
+    SpreadsheetApp.flush();
+    PropertiesService.getScriptProperties().setProperty("versio", String(ara.getTime()));
     PropertiesService.getScriptProperties().setProperty("vistesPendents", "1"); // las vistas se rehacen solas en <10 min
     return out(res);
   } catch(err) { return out({ok:false, error:String(err)}); }
@@ -108,8 +119,13 @@ function opPagaments(d, ara){
   const files = v.slice(1).filter(r=>r[0]!=="" && r[1]!=="").map(r=>({mes:fmtMonth(r[0]), pid:String(r[1]), imp:Number(r[2])||0, data:fmtDate(r[3]), act:r[4]}));
   const r = aplicarPagaments(files, d);
   const nou = r.files.map(f=>[f.mes, f.pid, f.imp, f.data, f.nou ? ara : f.act]);
-  if (v.length > 1) sh.getRange(2, 1, v.length-1, 5).clearContent();  // se reescribe de una vez, en memoria
-  if (nou.length) sh.getRange(2, 1, nou.length, 5).setValues(nou);
+  // se reescribe de una vez y sin borrar antes: si la hoja no tiene filas, primero se amplía
+  const n = Math.max(v.length-1, nou.length);
+  if (n > 0){
+    const falta = n + 1 - sh.getMaxRows(); if (falta > 0) sh.insertRowsAfter(sh.getMaxRows(), falta);
+    while (nou.length < n) nou.push(["","","","",""]);
+    sh.getRange(2, 1, n, 5).setValues(nou);
+  }
   registrar("pagaments", d.month, textPagaments(d.month, r.canvis, nomsPersones()), ara);
   const rowsMes = {}; r.files.filter(f=>f.mes===d.month).forEach(f=>{ rowsMes[f.pid] = {amount:f.imp, date:f.data, savedAt:iso(f.nou ? ara : f.act)}; });
   return {month:d.month, rows:rowsMes};
@@ -137,6 +153,24 @@ function opMes(d, ara){
   registrar("mes", m, (tancat ? "Mes cerrado: " : "Mes reabierto: ") + mesES(m), ara);
   return {month:m, tancat};
 }
+
+// ---------- Validación: lo que no tiene la forma esperada no entra en la hoja ----------
+const RX = { persona:/^[a-z0-9-]{1,80}$/, sessio:/^\d{4}-\d{2}-\d{2}(-[a-z]+)?$/, mes:/^\d{4}-\d{2}$/, data:/^\d{4}-\d{2}-\d{2}$/ };
+function validar(accio, d){
+  const mal = q=>{ throw new Error("dato no válido: " + q); };
+  const ids = (a,q)=>{ if (a != null && (!Array.isArray(a) || a.some(x=>!RX.persona.test(String(x))))) mal(q); };
+  if (accio === "sessio"){
+    if (!RX.sessio.test(String(d.id))) mal("sesión"); if (d.date && !RX.data.test(String(d.date))) mal("fecha");
+    if (d.group != null && !/^[\wàèéíòóúç ·-]{0,20}$/i.test(String(d.group))) mal("grupo");
+    ids(d.add,"lista"); ids(d.remove,"lista"); ids(d.othersRemove,"probar");
+    ["others","othersAdd"].forEach(k=>{ if (d[k] != null && (!Array.isArray(d[k]) || d[k].some(x=>String(x).length > 80))) mal("probar"); });
+  } else if (accio === "pagaments"){
+    if (!RX.mes.test(String(d.month))) mal("mes");
+    Object.keys(d.set||{}).forEach(pid=>{ const r = d.set[pid]||{}; if (!RX.persona.test(pid) || !isFinite(Number(r.amount)) || (r.date && !RX.data.test(String(r.date)))) mal("pago"); });
+    ids(d.unset,"pago");
+  } else if (accio === "persona" || accio === "fitxa"){ if (!RX.persona.test(String(d.id))) mal("persona"); }
+  else if (accio === "mes"){ if (!RX.mes.test(String(d.month))) mal("mes"); }
+}
 // ===================== PONT · CÀLCULS (puros, sin tocar la hoja) =====================
 // Cada guardado de la web manda SOLO LOS CAMBIOS respecto a lo que veía en pantalla.
 // Así, si Mario y Emi guardan a la vez, se suman los cambios de los dos en vez de pisarse.
@@ -145,13 +179,18 @@ function netejaText(s){ s = String(s==null ? "" : s).trim(); return /^[=+\-@]/.t
 function llistaIds(v){ return String(v==null ? "" : v).split(",").map(x=>x.trim()).filter(Boolean); }
 function unics(a){ const v = []; a.forEach(x=>{ if (x && v.indexOf(x) < 0) v.push(x); }); return v; }
 
-// sesión: cur = {present[], others[]} o null · op = {add[], remove[], others[]|null}
+// sesión: cur = {present[], others[]} o null · op = {add[], remove[], othersAdd[], othersRemove[]}
+// ("others" entero solo lo mandan páginas antiguas)
 function aplicarSessio(cur, op){
   const base = cur ? cur.present.slice() : [];
   const treu = op.remove || [];
   const present = base.filter(p=>treu.indexOf(p) < 0);
   (op.add || []).forEach(p=>{ if (present.indexOf(p) < 0) present.push(p); });
-  const others = op.others != null ? unics(op.others.map(netejaText)) : (cur ? cur.others : []);
+  let others = cur ? cur.others.slice() : [];
+  if (op.others != null && op.othersAdd == null && op.othersRemove == null) others = unics(op.others.map(netejaText));
+  const fora = (op.othersRemove || []).map(x=>netejaText(x).toLowerCase());
+  others = others.filter(o=>fora.indexOf(String(o).toLowerCase()) < 0);
+  (op.othersAdd || []).map(netejaText).forEach(o=>{ if (o && !others.some(x=>String(x).toLowerCase() === o.toLowerCase())) others.push(o); });
   return { present, others,
            afegits: (op.add || []).filter(p=>base.indexOf(p) < 0),
            trets: base.filter(p=>treu.indexOf(p) >= 0) };
@@ -218,6 +257,43 @@ function textPersona(p, canvis){
     if (c.indexOf("socia-") === 0) return "Socia " + c.slice(6) + " quitada: " + p.name;
     return c;
   }).join(" · ");
+}
+// ===================== FICHAS: datos personales de cada persona =====================
+// DNI, fecha de nacimiento, teléfono, email y dirección. Van en "dades · Fitxes" y la web SOLO los lee o
+// escribe con la contraseña de las fichas. Sin ella, el puente no los da a nadie.
+// En el Registre solo se apunta QUÉ campos cambiaron, nunca los datos.
+const CAMPS_FITXA = ["dni","naixement","telefon","email","adreca"];
+const NOMS_CAMPS = {dni:"DNI", naixement:"fecha de nacimiento", telefon:"teléfono", email:"email", adreca:"dirección"};
+
+// La contraseña la eligen Mario y Emi: la PRIMERA que se escribe en una ficha se queda como contraseña.
+// Si se olvida: menú Teatre dels Records › Olvidé la contraseña de las fichas (la siguiente que se escriba será la nueva).
+function comprovarClau(d){
+  const pr = PropertiesService.getScriptProperties(); const c = String(d.clau || ""); const actual = pr.getProperty("clauFitxes");
+  if (!actual){ if (c.length < 4) throw new Error("contraseña demasiado corta"); pr.setProperty("clauFitxes", c); return "nueva"; }
+  if (c !== actual) throw new Error("contraseña incorrecta");
+  return "ok";
+}
+function oblidarClauFitxes(){
+  const ui = SpreadsheetApp.getUi();
+  if (ui.alert("Olvidé la contraseña de las fichas", "Se borrará la contraseña. La próxima que se escriba en una ficha de la web será la nueva. Los datos no se tocan. ¿Seguir?", ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
+  PropertiesService.getScriptProperties().deleteProperty("clauFitxes"); ui.alert("Hecho. Escribid la nueva contraseña en una ficha de la web.");
+}
+function llegirFitxes(){
+  const o = {};
+  rows("fitxes").filter(r=>r[0]).forEach(r=>{ o[String(r[0])] = {dni:String(r[1]), naixement:fmtDate(r[2]), telefon:String(r[3]), email:String(r[4]), adreca:String(r[5]), savedAt:iso(r[6])}; });
+  return o;
+}
+function opFitxa(d, ara){
+  const sh = sheet("fitxes"); const v = sh.getDataRange().getValues(); let fila = -1;
+  for (let i = 1; i < v.length; i++){ if (String(v[i][0]) === String(d.id)){ fila = i; break; } }
+  const cur = fila > 0 ? {dni:String(v[fila][1]), naixement:fmtDate(v[fila][2]), telefon:String(v[fila][3]), email:String(v[fila][4]), adreca:String(v[fila][5])} : {dni:"",naixement:"",telefon:"",email:"",adreca:""};
+  const set = d.set || {}; const canvis = [];
+  CAMPS_FITXA.forEach(k=>{ if (set[k] != null){ const nou = netejaText(String(set[k]).slice(0, 200)); if (nou !== cur[k]){ cur[k] = nou; canvis.push(NOMS_CAMPS[k]); } } });
+  const fil = [String(d.id), cur.dni, cur.naixement, cur.telefon, cur.email, cur.adreca, ara];
+  if (fila > 0) sh.getRange(fila+1, 1, 1, fil.length).setValues([fil]); else sh.appendRow(fil);
+  const nom = nomsPersones()[String(d.id)] || d.id;
+  registrar("persona", d.id, canvis.length ? "Ficha de " + nom + ": " + canvis.join(", ") : "Ficha de " + nom + ": sin cambios", ara);
+  return Object.assign({id:String(d.id)}, cur, {savedAt:iso(ara)});
 }
 // ===================== VISTES · 1. CÀLCULS (sin tocar la hoja) =====================
 // Todo lo que se ve en las pestañas para mirar sale de aquí. Funciones puras: reciben filas y devuelven tablas.
@@ -523,6 +599,10 @@ function ordenarPestanyes(){
 
 // ---------- Entrada principal ----------
 function actualitzarVistes(){
+  const props = PropertiesService.getScriptProperties(); props.deleteProperty("vistesPendents"); // al principio: lo que se guarde mientras, se rehará después
+  try { rehacerVistes(); } catch(e) { props.setProperty("vistesPendents", "1"); throw e; }
+}
+function rehacerVistes(){
   const avui = Utilities.formatDate(new Date(), "Europe/Madrid", "yyyy-MM-dd");
   const m = construirModel(rows("persons"), rows("sessions"), rows("pagos"), avui);
   const sts = TEMPORADES.filter(t=>t.ini <= avui).map(t=>estadistiques(t, m));
@@ -533,7 +613,6 @@ function actualitzarVistes(){
   VISTES_OBSOLETES.forEach(n=>{ const sh = ss.getSheetByName(n); if (sh) ss.deleteSheet(sh); });
   sts.filter(st=>st.t.id!=="T1").forEach(st=>vistaQuotes(st, m));
   ordenarPestanyes();
-  PropertiesService.getScriptProperties().deleteProperty("vistesPendents");
 }
 
 // Lo llama el reloj cada 10 minutos: solo rehace si la web ha guardado algo
@@ -542,7 +621,7 @@ function actualitzarSiCal(){
 }
 
 function onOpen(){
-  SpreadsheetApp.getUi().createMenu("Teatre dels Records").addItem("Actualitzar ara", "actualitzarVistes").addToUi();
+  SpreadsheetApp.getUi().createMenu("Teatre dels Records").addItem("Actualitzar ara", "actualitzarVistes").addItem("Olvidé la contraseña de las fichas", "oblidarClauFitxes").addToUi();
 }
 
 // ===================== INSTAL·LACIÓ (ejecutar UNA vez) =====================
@@ -556,16 +635,17 @@ function instalar(){
   const propies = ORDRE_VISTES.concat(Object.keys(SHEETS).map(k=>SHEETS[k][0]), Object.keys(SHEETS).map(k=>SHEETS[k][2]));
   Object.keys(SHEETS).forEach(k=>sheet(k)); // renombra las de datos si tenían el nombre antiguo y crea el Registre
   { const sh = sheet("sessions"); sh.getRange(1, 1, sh.getMaxRows(), 1).setNumberFormat("@"); }
+  { const sh = sheet("registre"); sh.getRange(1, 3, sh.getMaxRows(), 1).setNumberFormat("@"); }
   const noms = ss.getSheets().map(sh=>sh.getName()).filter(n=>!propies.includes(n));
   if (noms.length){
     const nomArxiu = "Arxiu · pestanyes originals (Excel d'Emi) · Assistència i quotes TdR";
     let carpeta = null; try { carpeta = DriveApp.getFileById(ss.getId()).getParents().next(); } catch(e) {}
-    let arxiu = null;                                   // si un intento anterior ya lo creó, se reutiliza
+    let arxiu = null, arxiuNou = false;                 // si un intento anterior ya lo creó, se reutiliza
     if (carpeta){ const it = carpeta.getFilesByName(nomArxiu); if (it.hasNext()) arxiu = SpreadsheetApp.open(it.next()); }
-    if (!arxiu){ arxiu = SpreadsheetApp.create(nomArxiu); if (carpeta) try { DriveApp.getFileById(arxiu.getId()).moveTo(carpeta); } catch(e) {} }
+    if (!arxiu){ arxiu = SpreadsheetApp.create(nomArxiu); arxiuNou = true; if (carpeta) try { DriveApp.getFileById(arxiu.getId()).moveTo(carpeta); } catch(e) {} }
     noms.forEach(n=>{ const sh = ss.getSheetByName(n);
       if (sh && !arxiu.getSheetByName(n)) try { sh.copyTo(arxiu).setName(n); } catch(e) { Logger.log("No s'ha pogut copiar «" + n + "»: " + e); } });
-    arxiu.getSheets().filter(sh=>!noms.includes(sh.getName())).forEach(sh=>{ if (arxiu.getSheets().length > 1) arxiu.deleteSheet(sh); });
+    if (arxiuNou) arxiu.getSheets().filter(sh=>!noms.includes(sh.getName())).forEach(sh=>{ if (arxiu.getSheets().length > 1) arxiu.deleteSheet(sh); }); // solo la hoja vacía del archivo nuevo
     if (!ss.getSheetByName("Inici")) ss.insertSheet("Inici");  // una hoja tiene que quedar siempre
     SpreadsheetApp.flush();
     noms.forEach(n=>{ const sh = ss.getSheetByName(n);
@@ -577,6 +657,9 @@ function instalar(){
     const id = norm(v[i][0]);
     if (id === "2026-11-02" || id === "2026-06-10" || (id === "2026-11-04" && !String(v[i][3]).trim())) shS.deleteRow(i+1);
   }
+  // nombres corregidos a mano (2/11/2026): "Mary Rodríguez", sin el "(Mary Jo)"
+  { const shP = sheet("persons"); const vp = shP.getDataRange().getValues();
+    for (let i = 1; i < vp.length; i++) if (String(vp[i][1]) === "Mary Rodríguez (Mary Jo)") shP.getRange(i+1, 2).setValue("Mary Rodríguez"); }
   actualitzarVistes();
   ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==="actualitzarSiCal").forEach(t=>ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger("actualitzarSiCal").timeBased().everyMinutes(10).create();
@@ -606,7 +689,7 @@ function copiesDeSeguretat(forcar){
 }
 // ===== IMPORTACIÓN DEL HISTÓRICO (Excel de Emi, T2 marzo-junio 2026 y T3 sept-oct 2026) =====
 // Ejecutar UNA sola vez desde el editor: elegir "importarHistorico" en el desplegable y pulsar Ejecutar.
-const HIST_PERSONS = [["angeles-gutierrez", "Ángeles Gutiérrez", "no", "2026-03", "2026-10"], ["pepe-calle", "Pepe Calle", "no", "2026-03", "2026-10"], ["antonia-gutierrez", "Antonia Gutiérrez", "no", "2026-03", "2026-06"], ["teresa-munoz", "Teresa Muñoz", "no", "2026-03", "2026-04"], ["sofia-soto", "Sofía Soto", "no", "2026-03", "2026-05"], ["asun-rodriguez", "Asun Rodríguez", "sí", "2026-09", ""], ["merce-gomez", "Mercè Gómez", "sí", "2026-09", ""], ["marcela-rosa-escobar", "Marcela Rosa Escobar", "sí", "2026-09", ""], ["carmen-perez", "Carmen Pérez", "sí", "2026-09", ""], ["eva-estevez", "Eva Estévez", "sí", "2026-09", ""], ["m-jose-carmona", "M. José Carmona", "sí", "2026-09", ""], ["lola-gomez", "Lola Gómez", "sí", "2026-09", ""], ["leonor-canton", "Leonor Cantón", "sí", "2026-09", ""], ["esther-banos", "Esther Baños", "sí", "2026-09", ""], ["raquel-molina", "Raquel Molina", "sí", "2026-09", ""], ["mirta-edith", "Mirta Edith", "sí", "2026-09", ""], ["rafael-casinave", "Rafael Casinave", "sí", "2026-09", ""], ["imma-barney", "Imma Barney", "sí", "2026-09", ""], ["ana-leon", "Ana León", "sí", "2026-09", ""], ["mary-rodriguez-mary-jo", "Mary Rodríguez (Mary Jo)", "sí", "2026-09", ""]];
+const HIST_PERSONS = [["angeles-gutierrez", "Ángeles Gutiérrez", "no", "2026-03", "2026-10"], ["pepe-calle", "Pepe Calle", "no", "2026-03", "2026-10"], ["antonia-gutierrez", "Antonia Gutiérrez", "no", "2026-03", "2026-06"], ["teresa-munoz", "Teresa Muñoz", "no", "2026-03", "2026-04"], ["sofia-soto", "Sofía Soto", "no", "2026-03", "2026-05"], ["asun-rodriguez", "Asun Rodríguez", "sí", "2026-09", ""], ["merce-gomez", "Mercè Gómez", "sí", "2026-09", ""], ["marcela-rosa-escobar", "Marcela Rosa Escobar", "sí", "2026-09", ""], ["carmen-perez", "Carmen Pérez", "sí", "2026-09", ""], ["eva-estevez", "Eva Estévez", "sí", "2026-09", ""], ["m-jose-carmona", "M. José Carmona", "sí", "2026-09", ""], ["lola-gomez", "Lola Gómez", "sí", "2026-09", ""], ["leonor-canton", "Leonor Cantón", "sí", "2026-09", ""], ["esther-banos", "Esther Baños", "sí", "2026-09", ""], ["raquel-molina", "Raquel Molina", "sí", "2026-09", ""], ["mirta-edith", "Mirta Edith", "sí", "2026-09", ""], ["rafael-casinave", "Rafael Casinave", "sí", "2026-09", ""], ["imma-barney", "Imma Barney", "sí", "2026-09", ""], ["ana-leon", "Ana León", "sí", "2026-09", ""], ["mary-rodriguez-mary-jo", "Mary Rodríguez", "sí", "2026-09", ""]];
 const HIST_PAGOS = [["2026-03", "asun-rodriguez", 40, "2026-03-01"], ["2026-03", "merce-gomez", 40, "2026-03-01"], ["2026-03", "marcela-rosa-escobar", 40, "2026-03-01"], ["2026-03", "carmen-perez", 40, "2026-03-01"], ["2026-03", "eva-estevez", 40, "2026-03-01"], ["2026-03", "m-jose-carmona", 40, "2026-03-01"], ["2026-03", "lola-gomez", 40, "2026-03-01"], ["2026-03", "angeles-gutierrez", 40, "2026-03-01"], ["2026-03", "antonia-gutierrez", 40, "2026-03-01"], ["2026-03", "leonor-canton", 40, "2026-03-01"], ["2026-03", "teresa-munoz", 40, "2026-03-01"], ["2026-03", "pepe-calle", 40, "2026-03-01"], ["2026-03", "esther-banos", 40, "2026-03-01"], ["2026-03", "sofia-soto", 20, "2026-03-01"], ["2026-04", "asun-rodriguez", 40, "2026-04-01"], ["2026-04", "merce-gomez", 40, "2026-04-01"], ["2026-04", "marcela-rosa-escobar", 40, "2026-04-01"], ["2026-04", "carmen-perez", 40, "2026-04-01"], ["2026-04", "eva-estevez", 40, "2026-04-01"], ["2026-04", "m-jose-carmona", 40, "2026-04-01"], ["2026-04", "lola-gomez", 40, "2026-04-01"], ["2026-04", "antonia-gutierrez", 40, "2026-04-01"], ["2026-04", "leonor-canton", 40, "2026-04-01"], ["2026-04", "teresa-munoz", 40, "2026-04-01"], ["2026-04", "esther-banos", 40, "2026-04-01"], ["2026-04", "sofia-soto", 40, "2026-04-01"], ["2026-05", "asun-rodriguez", 40, "2026-05-01"], ["2026-05", "merce-gomez", 40, "2026-05-01"], ["2026-05", "marcela-rosa-escobar", 40, "2026-05-01"], ["2026-05", "carmen-perez", 40, "2026-05-01"], ["2026-05", "eva-estevez", 40, "2026-05-01"], ["2026-05", "m-jose-carmona", 40, "2026-05-01"], ["2026-05", "lola-gomez", 40, "2026-05-01"], ["2026-05", "antonia-gutierrez", 40, "2026-05-01"], ["2026-05", "leonor-canton", 40, "2026-05-01"], ["2026-05", "esther-banos", 40, "2026-05-01"], ["2026-05", "sofia-soto", 40, "2026-05-01"], ["2026-05", "raquel-molina", 40, "2026-05-01"], ["2026-06", "asun-rodriguez", 25, "2026-06-01"], ["2026-06", "merce-gomez", 40, "2026-06-01"], ["2026-06", "marcela-rosa-escobar", 25, "2026-06-01"], ["2026-06", "carmen-perez", 40, "2026-06-01"], ["2026-06", "eva-estevez", 40, "2026-06-01"], ["2026-06", "lola-gomez", 25, "2026-06-01"], ["2026-06", "antonia-gutierrez", 25, "2026-06-01"], ["2026-06", "leonor-canton", 25, "2026-06-01"], ["2026-06", "esther-banos", 25, "2026-06-01"], ["2026-06", "raquel-molina", 25, "2026-06-01"], ["2026-09", "asun-rodriguez", 25, "2026-09-01"], ["2026-09", "merce-gomez", 25, "2026-09-01"], ["2026-09", "carmen-perez", 25, "2026-09-01"], ["2026-09", "eva-estevez", 25, "2026-09-01"], ["2026-09", "m-jose-carmona", 25, "2026-09-01"], ["2026-09", "lola-gomez", 25, "2026-09-01"], ["2026-09", "esther-banos", 25, "2026-09-01"], ["2026-09", "raquel-molina", 25, "2026-09-01"], ["2026-09", "mirta-edith", 25, "2026-09-01"], ["2026-09", "rafael-casinave", 25, "2026-09-01"], ["2026-09", "imma-barney", 25, "2026-09-01"], ["2026-10", "asun-rodriguez", 45, "2026-10-01"], ["2026-10", "merce-gomez", 45, "2026-10-01"], ["2026-10", "carmen-perez", 45, "2026-10-01"], ["2026-10", "eva-estevez", 45, "2026-10-01"], ["2026-10", "m-jose-carmona", 45, "2026-10-01"], ["2026-10", "lola-gomez", 45, "2026-10-01"], ["2026-10", "leonor-canton", 45, "2026-10-01"], ["2026-10", "esther-banos", 45, "2026-10-01"], ["2026-10", "raquel-molina", 45, "2026-10-01"], ["2026-10", "marcela-rosa-escobar", 45, "2026-10-01"], ["2026-10", "rafael-casinave", 45, "2026-10-01"], ["2026-10", "imma-barney", 45, "2026-10-01"], ["2026-10", "ana-leon", 45, "2026-10-01"], ["2026-10", "mary-rodriguez-mary-jo", 45, "2026-10-01"], ["2026-10", "mirta-edith", 50, "2026-10-01"]];
 
 // Hojas de asistencia en papel de la T1 (oct–dic 2025), grupos matí y tarda, transcritas el 2/11/2026

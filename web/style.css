@@ -163,3 +163,10 @@ textarea{font:inherit;font-size:.85rem;width:100%;min-height:140px;background:va
 .confirm p{margin:0;font-weight:600}
 .tab{min-width:0;overflow:hidden;white-space:nowrap}
 @media (max-width:400px){ .tab{font-size:.62rem;letter-spacing:0} }
+.ficha h4{margin:4px 0 0;font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+.ficha .f-estado{align-items:center;gap:8px;flex-wrap:wrap}
+.ficha .f-est{flex:1 1 100%;font-weight:600}
+.ficha .campos{display:grid;grid-template-columns:1fr;gap:8px}
+.ficha .campos label{display:flex;flex-direction:column;gap:3px;font-size:.8rem;color:var(--muted)}
+.ficha .campos input{font-size:1rem;height:40px}
+.ficha input[type=tel],.ficha input[type=email]{font:inherit;font-size:1rem;height:40px;color:var(--fg);background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:0 12px;width:100%;min-width:0;-webkit-appearance:none;appearance:none}

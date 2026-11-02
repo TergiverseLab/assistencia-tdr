@@ -19,6 +19,8 @@ let shownDay=null;
 function syncToday(){ const t=todayISO(); if(shownDay && shownDay!==t && !listaTocada()){ curSessionId=null; setDate(t); } shownDay=t; }
 document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"){ syncToday(); refresh(); } });
 window.addEventListener("focus",syncToday); setInterval(syncToday,60000);
+// con cobertura débil el móvil no siempre avisa de que vuelve la red: cada minuto se reintenta lo pendiente
+setInterval(()=>{ if(store && store.pending().length) store.retry(); },60000);
 window.addEventListener("online",async()=>{ if(store){ await store.retry(); refresh(); } });
 
 (async()=>{

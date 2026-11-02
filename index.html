@@ -178,6 +178,13 @@ textarea{font:inherit;font-size:.85rem;width:100%;min-height:140px;background:va
 .confirm p{margin:0;font-weight:600}
 .tab{min-width:0;overflow:hidden;white-space:nowrap}
 @media (max-width:400px){ .tab{font-size:.62rem;letter-spacing:0} }
+.ficha h4{margin:4px 0 0;font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+.ficha .f-estado{align-items:center;gap:8px;flex-wrap:wrap}
+.ficha .f-est{flex:1 1 100%;font-weight:600}
+.ficha .campos{display:grid;grid-template-columns:1fr;gap:8px}
+.ficha .campos label{display:flex;flex-direction:column;gap:3px;font-size:.8rem;color:var(--muted)}
+.ficha .campos input{font-size:1rem;height:40px}
+.ficha input[type=tel],.ficha input[type=email]{font:inherit;font-size:1rem;height:40px;color:var(--fg);background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:0 12px;width:100%;min-width:0;-webkit-appearance:none;appearance:none}
 </style>
 </head>
 <body>
@@ -324,6 +331,14 @@ const SHEET_URL = "https://script.google.com/macros/s/AKfycbzjjROnGm_CcezvQ9dH-5
 const slug = s => s.normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
 const ID_PERSONA = /^[a-z0-9-]+$/, ID_SESION = /^\d{4}-\d{2}-\d{2}(-[a-z]+)?$/, ID_MES = /^\d{4}-\d{2}$/;
 
+// "vienen a probar" también va por diferencias (othersAdd / othersRemove), sin mayúsculas/minúsculas
+const lc = x => String(x).toLowerCase();
+function othersTras(cur, d){
+  let o = (d.others!=null && d.othersAdd==null && d.othersRemove==null) ? d.others.slice() : cur.slice();
+  const fora=(d.othersRemove||[]).map(lc); o=o.filter(x=>!fora.includes(lc(x)));
+  (d.othersAdd||[]).forEach(x=>{ if(x && !o.some(y=>lc(y)===lc(x))) o.push(x); });
+  return o;
+}
 // ---- aplicar una operación sobre los datos del móvil (lo mismo que hace el puente en la hoja) ----
 function aplicarOp(data, op){
   const d = op.data;
@@ -332,7 +347,7 @@ function aplicarOp(data, op){
     const base = cur ? cur.present.slice() : [];
     const present = base.filter(p=>!(d.remove||[]).includes(p)); (d.add||[]).forEach(p=>{ if(!present.includes(p)) present.push(p); });
     data.sessions[d.id] = {id:d.id, date:d.date||(cur&&cur.date)||d.id.slice(0,10), group:d.group!=null?d.group:((cur&&cur.group)||""), present,
-                           others: d.others!=null ? d.others.slice() : ((cur&&cur.others)||[]), savedAt:(cur&&cur.savedAt)||""};
+                           others: othersTras((cur&&cur.others)||[], d), savedAt:(cur&&cur.savedAt)||""};
   } else if (op.action === "pagaments"){
     const m = data.pagos[d.month] || (data.pagos[d.month] = {month:d.month, rows:{}});
     (d.unset||[]).forEach(pid=>{ delete m.rows[pid]; });
@@ -349,12 +364,17 @@ function fundirOps(a, b){
   const x = JSON.parse(JSON.stringify(a.data)), y = b.data;
   if (a.action === "sessio"){
     const add = new Set(x.add||[]), rem = new Set(x.remove||[]);
-    (y.add||[]).forEach(p=>{ rem.delete(p); add.add(p); }); (y.remove||[]).forEach(p=>{ add.delete(p); rem.add(p); });
-    x.add=[...add]; x.remove=[...rem]; if (y.others!=null) x.others=y.others; if (y.date) x.date=y.date; if (y.group!=null) x.group=y.group;
+    // quitar a alguien que solo estaba por un cambio propio aún sin subir = deshacer ese cambio (no borrar en la hoja)
+    (y.add||[]).forEach(p=>{ if(rem.has(p)) rem.delete(p); else add.add(p); }); (y.remove||[]).forEach(p=>{ if(add.has(p)) add.delete(p); else rem.add(p); });
+    x.add=[...add]; x.remove=[...rem];
+    const oa=new Map((x.othersAdd||[]).map(o=>[lc(o),o])), or=new Map((x.othersRemove||[]).map(o=>[lc(o),o]));
+    (y.othersAdd||[]).forEach(o=>{ if(or.has(lc(o))) or.delete(lc(o)); else oa.set(lc(o),o); }); (y.othersRemove||[]).forEach(o=>{ if(oa.has(lc(o))) oa.delete(lc(o)); else or.set(lc(o),o); });
+    x.othersAdd=[...oa.values()]; x.othersRemove=[...or.values()]; if (y.others!=null) x.others=y.others; if (y.date) x.date=y.date; if (y.group!=null) x.group=y.group;
   } else if (a.action === "pagaments"){
-    x.set = x.set||{}; const uns = new Set(x.unset||[]);
-    Object.keys(y.set||{}).forEach(pid=>{ uns.delete(pid); x.set[pid]=y.set[pid]; }); (y.unset||[]).forEach(pid=>{ delete x.set[pid]; uns.add(pid); });
-    x.unset=[...uns];
+    x.set = x.set||{}; const uns = new Set(x.unset||[]), nous = new Set(x.nous||[]);
+    Object.keys(y.set||{}).forEach(pid=>{ if(!uns.has(pid) && (y.nous||[]).includes(pid)) nous.add(pid); uns.delete(pid); x.set[pid]=y.set[pid]; });
+    (y.unset||[]).forEach(pid=>{ const propio=nous.has(pid); delete x.set[pid]; nous.delete(pid); if(!propio) uns.add(pid); }); // un pago propio aún sin subir se deshace
+    x.unset=[...uns]; x.nous=[...nous];
   } else if (a.action === "persona"){ x.set = Object.assign({}, x.set, y.set); }
   else if (a.action === "mes"){ x.tancat = y.tancat; }
   return {action:a.action, key:a.key, data:x, t:b.t};
@@ -387,14 +407,17 @@ function SheetStore(url){
     if (!j.ok) throw Object.assign(new Error(j.error||"error del servidor"),{red:!!j.retry || /desconocida/.test(j.error||"")});
     return j;
   }
-  let flushing = null;
+  let flushing = null; const leyendo = [];
   function flush(){
     if (flushing) return flushing;
     flushing = (async()=>{
       let q = queue();
       while (q.length){
         const op = q[0];
-        try { const res = await post(op); q = queue(); q.shift(); setQueue(q); st.ultimo[op.key] = res; if (st.onResult) st.onResult(op,res); }
+        try { const res = await post(op); q = queue(); q.shift(); setQueue(q); st.ultimo[op.key] = res;
+          leyendo.forEach(l=>l.push(op));                                    // por si una lectura en curso trae datos de antes
+          const c=ls.get(CK); if(c&&c.data){ aplicarOp(c.data,op); ls.set(CK,c); } // la copia del móvil, al día
+          if (st.onResult) st.onResult(op,res); }
         catch(e){ if (e.red) break; q = queue(); q.shift(); setQueue(q); st.errors.push({op, error:e.message}); if (st.onResult) st.onResult(op,null,e); }
       }
       if (st.onChange) st.onChange();
@@ -407,10 +430,13 @@ function SheetStore(url){
     cached(){ const c=ls.get(CK); return c&&c.data ? c.data : null; },
     async load(){
       await flush().catch(()=>{});
-      const r=await fetch(url+"?t="+Date.now()); const j=await r.json(); if(!j.ok) throw new Error(j.error||"error");
-      const data=normalizar(j); ls.set(CK,{t:Date.now(),data});
-      queue().forEach(op=>aplicarOp(data,op)); // lo pendiente de subir se ve igualmente
-      return data;
+      const hechas=[]; leyendo.push(hechas);
+      try {
+        const r=await fetch(url+"?t="+Date.now()); const j=await r.json(); if(!j.ok) throw new Error(j.error||"error");
+        const data=normalizar(j); hechas.forEach(op=>aplicarOp(data,op)); ls.set(CK,{t:Date.now(),data:JSON.parse(JSON.stringify(data))});
+        queue().forEach(op=>aplicarOp(data,op)); // lo pendiente de subir se ve igualmente
+        return data;
+      } finally { leyendo.splice(leyendo.indexOf(hechas),1); }
     },
     // apunta la operación en la cola y la envía (después de las anteriores). Devuelve la respuesta del puente,
     // o {encola:true} si no hay red (se enviará sola). Lanza error si el puente la rechaza.
@@ -442,7 +468,7 @@ async function pickStore(){
 
 (function(){
 // ===== 1. BASE: utilidades, temporadas, navegación, botón Guardar =====
-const APP_VERSION = "02/11 23:16";
+const APP_VERSION = "02/11 23:25";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;          // cuota mensual habitual (septiembre fue 25)
 const $ = id => document.getElementById(id);
@@ -521,7 +547,7 @@ $("save").addEventListener("click",()=>{ if(guardando) return; if(vistaActual===
 // ---------- avisos de cambios pendientes de subir ----------
 function updPendientes(){
   const n = store && store.pending ? store.pending().length : 0; const b=$("banner");
-  if(n){ b.hidden=false; b.className="banner warn"; b.innerHTML=`${n} ${n===1?"cambio guardado":"cambios guardados"} en este móvil, pendientes de subir a la hoja. Se enviarán solos al recuperar la conexión. <button class="btn ghost small" type="button" id="b-retry">Reintentar ahora</button>`;
+  if(n){ b.hidden=false; b.className="banner warn"; b.innerHTML=`Sin conexión. La información se actualizará cuando vuelvas a tener conexión. <button class="btn ghost small" type="button" id="b-retry">Reintentar ahora</button>`;
     $("b-retry").onclick=async()=>{ $("b-retry").disabled=true; await store.retry(); updPendientes(); }; }
   else if(b.classList.contains("warn")){ b.hidden=true; b.className="banner"; b.textContent=""; }
 }
@@ -541,7 +567,7 @@ function confirmar(fila, texto, si, alSi){
 // a lo que se cargó en pantalla (base): quién se ha marcado y quién se ha desmarcado. Así, si Emi y Mario pasan lista
 // a la vez, se suman las dos listas en vez de pisarse.
 let curSessionId=null;
-let baseSes={id:null, present:[]};   // lo que había en la hoja cuando se pintó la lista
+let baseSes={id:null, present:[], others:[]};   // lo que había en la hoja cuando se pintó la lista
 function sessionsOn(date){ return Object.keys(data.sessions).filter(k=>(data.sessions[k].date||k)===date).sort(); }
 function rosterFor(sid,date){
   const s=sid?data.sessions[sid]:null;
@@ -584,17 +610,17 @@ const others=()=>$("l-others").value.split(",").map(s=>s.trim()).filter(Boolean)
 function updCount(){ $("l-count").textContent=checked().length+others().length; }
 function marcar(ids,otros){ $("l-roster").querySelectorAll("input").forEach(c=>{ c.checked=ids.includes(c.value); c.parentElement.classList.toggle("on",c.checked); }); $("l-others").value=(otros||[]).join(", "); updCount(); }
 // ¿hay cambios en pantalla sin guardar?
-function listaTocada(){ const a=checked().slice().sort().join(), b=baseSes.present.slice().sort().join(); const s=curSessionId&&data.sessions[curSessionId];
-  return a!==b || others().join(",")!==((s&&s.others)||[]).join(","); }
+const bajo=a=>a.map(x=>x.toLowerCase()).sort().join(",");
+function listaTocada(){ return checked().slice().sort().join()!==baseSes.present.slice().sort().join() || bajo(others())!==bajo(baseSes.others||[]); }
 
 // Borrador: lo marcado se guarda en el móvil al instante y se recupera si se recarga antes de pulsar Guardar
-const draftKey=()=>"tdr-draft-"+($("l-date").value||"")+"-"+(curSessionId||"nueva");
-function saveDraft(){ try{ if(listaTocada()) localStorage.setItem(draftKey(),JSON.stringify({present:checked(),others:$("l-others").value,base:baseSes.present,t:Date.now()})); else localStorage.removeItem(draftKey()); }catch(e){} }
+const draftKey=()=>"tdr-draft-"+(curSessionId||$("l-date").value||""); // misma clave antes y después de que exista la sesión
+function saveDraft(){ try{ if(listaTocada()) localStorage.setItem(draftKey(),JSON.stringify({present:checked(),others:$("l-others").value,base:baseSes.present,baseOthers:baseSes.others,t:Date.now()})); else localStorage.removeItem(draftKey()); }catch(e){} }
 function clearDraft(k){ try{ localStorage.removeItem(k||draftKey()); }catch(e){} }
 function readDraft(){ try{ return JSON.parse(localStorage.getItem(draftKey())||"null"); }catch(e){ return null; } }
 function applyDraft(){
   const d=readDraft(); if(!d) return false;
-  baseSes={id:curSessionId, present:d.base||[]};
+  baseSes={id:curSessionId, present:d.base||[], others:d.baseOthers||[]};
   marcar(d.present, String(d.others||"").split(",").map(s=>s.trim()).filter(Boolean));
   setStatus("l-status","Recuperado lo que tenías marcado sin guardar. Pulsa Guardar cuando termines.","ok"); return true;
 }
@@ -604,7 +630,7 @@ $("l-clear").addEventListener("click",()=>{ $("l-roster").querySelectorAll("inpu
 
 function setDate(iso, sid){
   $("l-date").value=iso; const d=new Date(iso+"T12:00:00");
-  $("l-dayname").innerHTML=`<span>${DIAS[d.getDay()]} ${fmt(iso)}</span><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>`;
+  $("l-dayname").innerHTML=`<span>${esc(DIAS[d.getDay()]||"")} ${esc(fmt(iso))}</span><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>`;
   const found=sessionsOn(iso); const grouped=found.filter(k=>data.sessions[k].group);
   curSessionId = (sid && data.sessions[sid]) ? sid : (found.length ? found[0] : null);
   $("l-grouprow").hidden=grouped.length===0;
@@ -613,12 +639,12 @@ function setDate(iso, sid){
 }
 function loadSession(id){
   const s=id?data.sessions[id]:null;
-  baseSes={id, present:s?s.present.slice():[]};
+  baseSes={id, present:s?s.present.slice():[], others:s?(s.others||[]).slice():[]};
   marcar(s?s.present:[], s?s.others:[]); setStatus("l-status",""); lineaGuardada();
 }
 function lineaGuardada(estado){
   const el=$("l-saved"); const s=curSessionId&&data.sessions[curSessionId];
-  if(estado==="cola"){ el.textContent="Guardada en este móvil · pendiente de subir a la hoja"; el.className="saved warn"; return; }
+  if(estado==="cola"){ el.textContent="Sin conexión. Se actualizará cuando vuelvas a tener conexión."; el.className="saved warn"; return; }
   if(estado==="busy"){ el.textContent="Guardando…"; el.className="saved"; return; }
   if(s&&s.savedAt){ el.textContent=`Guardada el ${hora(s.savedAt)}`; el.className="saved ok"; }
   else if(s){ el.textContent=""; el.className="saved"; }
@@ -636,7 +662,8 @@ $("l-lock").addEventListener("click",()=>{
   if(!curSessionId) return; const k="s:"+curSessionId;
   if(isSesLocked(curSessionId)) confirmar($("l-lockrow"), "Esta sesión ya está cerrada. ¿Seguro que quieres modificarla?", "Sí, modificar", ()=>{
     abiertos.add(k); applySesLock(); setStatus("l-status","Sesión desbloqueada: corrige y guarda.","ok"); });
-  else { abiertos.delete(k); loadSession(curSessionId); clearDraft(); applySesLock(); setStatus("l-status","Sesión cerrada sin cambios.","ok"); }
+  else { const cerrar=()=>{ abiertos.delete(k); loadSession(curSessionId); clearDraft(); applySesLock(); setStatus("l-status","Sesión cerrada sin cambios.","ok"); };
+    if(listaTocada()) confirmar($("l-lockrow"), "Hay cambios sin guardar. ¿Cerrar y descartarlos?", "Sí, descartar", cerrar); else cerrar(); }
 });
 $("l-group").addEventListener("change",()=>{ setDate($("l-date").value, $("l-group").value); });
 // ‹ › : salta a la sesión registrada anterior/siguiente. Si no hay más, al miércoles anterior/siguiente.
@@ -654,24 +681,29 @@ $("l-date").addEventListener("change",()=>{ if($("l-date").value) setDate($("l-d
 
 async function saveSession(){
   const date=$("l-date").value; if(!date){ setStatus("l-status","Falta la fecha.","err"); return; }
+  if(isSesLocked(curSessionId)) return;
   const sid=curSessionId||date; const prev=data.sessions[sid];
   const ahora=checked(); const base=baseSes.present;
-  const op={action:"sessio", key:"s:"+sid, data:{id:sid, date, group:prev?prev.group||"":"", add:ahora.filter(p=>!base.includes(p)), remove:base.filter(p=>!ahora.includes(p)), others:others()}};
+  const op={action:"sessio", key:"s:"+sid, data:{id:sid, date, group:prev?prev.group||"":"", add:ahora.filter(p=>!base.includes(p)), remove:base.filter(p=>!ahora.includes(p)),
+    othersAdd:others().filter(o=>!(baseSes.others||[]).some(x=>x.toLowerCase()===o.toLowerCase())),
+    othersRemove:(baseSes.others||[]).filter(x=>!others().some(o=>o.toLowerCase()===x.toLowerCase()))}};
   const kDraft=draftKey();
   botonEstado("busy"); lineaGuardada("busy"); setStatus("l-status","");
-  aplicarOp(data,op); curSessionId=sid; baseSes={id:sid, present:data.sessions[sid].present.slice()}; abiertos.delete("s:"+sid); clearDraft(kDraft);
+  aplicarOp(data,op); curSessionId=sid; baseSes={id:sid, present:data.sessions[sid].present.slice(), others:data.sessions[sid].others.slice()}; abiertos.delete("s:"+sid); clearDraft(kDraft);
+  const sigue=()=>curSessionId===sid; // si mientras se guarda se cambia de fecha, no se toca la pantalla nueva
   try{
     const res=await store.send(op);
-    if(res.encola){ botonEstado("ok","Guardada en el móvil ✓"); lineaGuardada("cola"); }
+    if(res.encola){ botonEstado("ok","Sin conexión"); lineaGuardada("cola"); }
     else {
-      if(res.session){ const antes=ahora.length; data.sessions[sid]=res.session; baseSes={id:sid, present:res.session.present.slice()};
-        marcar(res.session.present,res.session.others); const extra=res.session.present.length-antes;
-        if(extra>0) setStatus("l-status",`Se han sumado ${extra} ${extra===1?"persona marcada":"personas marcadas"} desde otro móvil.`,"ok"); }
-      botonEstado("ok","Asistencia guardada ✓"); lineaGuardada();
+      if(res.session){ const antes=ahora.length; data.sessions[sid]=res.session; const extra=res.session.present.length-antes;
+        if(sigue()){ baseSes={id:sid, present:res.session.present.slice(), others:(res.session.others||[]).slice()}; marcar(res.session.present,res.session.others); }
+        if(extra>0 && sigue()) setStatus("l-status",`Se han sumado ${extra} ${extra===1?"persona marcada":"personas marcadas"} desde otro móvil.`,"ok"); }
+      botonEstado("ok","Asistencia guardada ✓"); if(sigue()) lineaGuardada();
     }
   }catch(e){ botonEstado("err","No se ha guardado"); setStatus("l-status","La hoja ha rechazado el cambio: "+e.message,"err"); refresh(); }
-  renderRoster(); const s=data.sessions[sid]; if(s){ baseSes={id:sid, present:s.present.slice()}; marcar(s.present,s.others); } lineaGuardada(store.pending().some(o=>o.key==="s:"+sid)?"cola":undefined);
-  applySesLock(); updPendientes();
+  if(sigue()){ renderRoster(); const s=data.sessions[sid]; if(s){ baseSes={id:sid, present:s.present.slice(), others:(s.others||[]).slice()}; marcar(s.present,s.others); } lineaGuardada(store.pending().some(o=>o.key==="s:"+sid)?"cola":undefined);
+    applySesLock(); }
+  updPendientes();
 }
 
 // ===== 3. PAGOS =====
@@ -691,7 +723,8 @@ $("p-default").addEventListener("input",()=>{ $("p-list").querySelectorAll(".tog
 // Botón del mes: Cerrar mes (mes en curso abierto) · Reabrir mes (cerrado a mano) · Desbloquear para corregir (mes pasado) · Volver a cerrar
 $("p-lock").addEventListener("click",()=>{
   const m=curMonth, k="m:"+m, past=m<todayISO().slice(0,7);
-  if(!isLocked(m) && abiertos.has(k)){ abiertos.delete(k); clearPagDraft(); renderPagos(); setStatus("p-status","Mes cerrado sin cambios.","ok"); return; }
+  if(!isLocked(m) && abiertos.has(k)){ const cerrar=()=>{ abiertos.delete(k); clearPagDraft(); renderPagos(); setStatus("p-status","Mes cerrado sin cambios.","ok"); };
+    if(pagosTocados()) confirmar($("p-lockrow"), "Hay cambios sin guardar. ¿Cerrar y descartarlos?", "Sí, descartar", cerrar); else cerrar(); return; }
   if(!isLocked(m)){ // mes en curso abierto: cerrar en la hoja
     if(pagosTocados()){ setStatus("p-status","Antes de cerrar el mes, guarda los cambios.","err"); return; }
     confirmar($("p-lockrow"), `¿Cerrar ${monthName(m)}? Las cuotas quedarán bloqueadas también en el móvil de Emi.`, "Sí, cerrar el mes", ()=>marcarMes(m,true)); return; }
@@ -700,7 +733,7 @@ $("p-lock").addEventListener("click",()=>{
 });
 async function marcarMes(m,tancat){
   const op={action:"mes", key:"c:"+m, data:{month:m, tancat}}; aplicarOp(data,op); abiertos.delete("m:"+m); renderPagos();
-  try{ const res=await store.send(op); setStatus("p-status", res.encola ? "Guardado en el móvil; se enviará al recuperar la conexión." : (tancat?`${monthName(m)} cerrado.`:`${monthName(m)} reabierto.`),"ok"); }
+  try{ const res=await store.send(op); setStatus("p-status", res.encola ? "Sin conexión. Se actualizará cuando vuelvas a tener conexión." : (tancat?`${monthName(m)} cerrado.`:`${monthName(m)} reabierto.`),"ok"); }
   catch(e){ setStatus("p-status","La hoja ha rechazado el cambio: "+e.message,"err"); refresh(); }
   updPendientes();
 }
@@ -739,7 +772,7 @@ function renderPagos(){
   if(!personas.length){ list.innerHTML='<p class="empty">No consta ningún pago en este mes.</p>'; }
   personas.forEach(p=>{
     const r=rows[p.id]; const div=document.createElement("div"); div.className="pay";
-    div.innerHTML=`<div class="name">${esc(p.name)}<small>${p.active===false?"(baja) ":""}${r&&r.date?"pagado "+fmt(r.date):"pendiente"}</small></div>
+    div.innerHTML=`<div class="name">${esc(p.name)}<small>${p.active===false?"(baja) ":""}${r&&r.date?"pagado "+esc(fmt(r.date)):"pendiente"}</small></div>
       <input type="number" inputmode="decimal" min="0" step="1" value="${esc(r?r.amount:defAmount())}" class="${r?"":"dim"}" aria-label="Importe ${esc(p.name)}" data-id="${esc(p.id)}" ${locked?"disabled":""}>
       <button class="tog ${r?"on":""}" type="button" data-id="${esc(p.id)}" aria-pressed="${!!r}" aria-label="Pagado ${esc(p.name)}" ${locked?"disabled":""}>${r?"✓":"○"}</button>`;
     list.append(div);
@@ -766,7 +799,7 @@ function renderPagos(){
 function lineaPagos(estado){
   const el=$("p-saved"); const rows=(data.pagos[curMonth]||{rows:{}}).rows||{};
   if(estado==="busy"){ el.textContent="Guardando…"; el.className="saved"; return; }
-  if(store && store.pending().some(o=>o.key==="m:"+curMonth)){ el.textContent="Guardado en este móvil · pendiente de subir a la hoja"; el.className="saved warn"; return; }
+  if(store && store.pending().some(o=>o.key==="m:"+curMonth)){ el.textContent="Sin conexión. Se actualizará cuando vuelvas a tener conexión."; el.className="saved warn"; return; }
   const ult=Object.values(rows).map(r=>r.savedAt||"").sort().pop();
   el.textContent = ult ? `Último cambio guardado el ${hora(ult)}` : ""; el.className="saved"+(ult?" ok":"");
 }
@@ -774,17 +807,17 @@ function updTotal(){ const {ui,soc}=estadoPantalla(); const on=Object.values(ui)
   $("p-total").textContent=`${on.length} pagos${ns?` + ${ns} socia`:""} · ${t} €`; }
 
 async function savePagos(){
-  const month=curMonth; const c=cambiosPagos();
+  const month=curMonth; if(isLocked(month)) return; const c=cambiosPagos();
   if(!Object.keys(c.set).length && !c.unset.length && !Object.keys(c.soc).length){ setStatus("p-status","No hay cambios que guardar.","ok"); return; }
   botonEstado("busy"); lineaPagos("busy"); setStatus("p-status","");
   const ops=[];
-  if(Object.keys(c.set).length||c.unset.length) ops.push({action:"pagaments", key:"m:"+month, data:{month, set:c.set, unset:c.unset}});
+  if(Object.keys(c.set).length||c.unset.length) ops.push({action:"pagaments", key:"m:"+month, data:{month, set:c.set, unset:c.unset, nous:Object.keys(c.set).filter(pid=>!basePag.rows[pid])}});
   Object.keys(c.soc).forEach(pid=>{ const p=data.persons[pid]; if(!p) return; ops.push({action:"persona", key:"p:"+pid, data:{id:pid, set:{socia:{...(p.socia||{}),[curSeasonKey()]:{amount:c.soc[pid],date:todayISO()}}}}}); });
   ops.forEach(op=>aplicarOp(data,op)); abiertos.delete("m:"+month); clearPagDraft(month);
   let cola=false, error=null;
   for(const op of ops){ try{ const res=await store.send(op); if(res.encola) cola=true; else { if(res.pagos) data.pagos[month]={month, rows:res.pagos.rows}; if(res.person) data.persons[res.person.id]=res.person; } } catch(e){ error=e; } }
   if(error){ botonEstado("err","No se ha guardado"); setStatus("p-status","La hoja ha rechazado algún cambio: "+error.message,"err"); refresh(); }
-  else botonEstado("ok", cola?"Guardado en el móvil ✓":"Cuotas guardadas ✓");
+  else botonEstado("ok", cola?"Sin conexión":"Cuotas guardadas ✓");
   renderPagos(); updPendientes();
 }
 
@@ -803,31 +836,7 @@ async function guardarPersona(id,set,msgEl){
   catch(e){ if(msgEl){ msgEl.textContent="La hoja ha rechazado el cambio: "+e.message; msgEl.className="status err"; } refresh(); }
   updPendientes();
 }
-// Ficha de persona: historial completo y corrección del nombre
-function toggleFicha(pid,row){
-  const next=row.nextElementSibling; if(next&&next.classList.contains("ficha")){ next.remove(); return; }
-  document.querySelectorAll("#n-list .ficha").forEach(f=>f.remove());
-  const p=data.persons[pid]; if(!p) return;
-  const ses=Object.keys(data.sessions).filter(k=>data.sessions[k].present.includes(pid)).sort((a,b)=>(data.sessions[a].date||a).localeCompare(data.sessions[b].date||b));
-  const conLista=ses.filter(sesConLista);
-  const temps=[...new Set(ses.map(sesSeason))]; Object.keys(data.pagos).forEach(m=>{ if((data.pagos[m].rows||{})[pid]) temps.push(seasonOf(m)); });
-  const pagos=Object.keys(data.pagos).sort().filter(m=>(data.pagos[m].rows||{})[pid]).map(m=>({m,a:Number(data.pagos[m].rows[pid].amount)||0}));
-  const socia=Object.keys(p.socia||{}).sort();
-  const f=document.createElement("div"); f.className="ficha";
-  f.innerHTML=`<dl>
-    <dt>Alta</dt><dd>${p.from?esc(monthName(p.from)):"—"}</dd>
-    <dt>Estado</dt><dd>${p.active===false?"baja"+(p.to?" desde "+esc(monthName(p.to)):""):"activa"}</dd>
-    <dt>Temporadas</dt><dd>${[...new Set(temps)].sort().map(seasonLabel).map(esc).join("<br>")||"—"}</dd>
-    <dt>Sesiones con lista</dt><dd>${conLista.length}${conLista.length?` <small>(última: ${esc(fmt(data.sessions[conLista[conLista.length-1]].date||conLista[conLista.length-1]))})</small>`:""}</dd>
-    <dt>Cuotas</dt><dd>${pagos.length?`${pagos.length} meses · ${pagos.reduce((a,x)=>a+x.a,0)} €<br><small>${pagos.map(x=>esc(shortMonth(x.m))+" "+x.a+" €").join(" · ")}</small>`:"—"}</dd>
-    <dt>Socia</dt><dd>${socia.length?socia.map(k=>`${esc(k)} (${Number(p.socia[k].amount)||0} €)`).join(", "):"—"}</dd>
-  </dl>
-  <div class="row nowrap"><input type="text" value="${esc(p.name)}" aria-label="Nombre de ${esc(p.name)}" style="flex:1"><button class="btn small" type="button">Guardar nombre</button></div>
-  <span class="status" aria-live="polite"></span>`;
-  const inp=f.querySelector("input"), btn=f.querySelector("button"), st=f.querySelector(".status");
-  btn.addEventListener("click",async()=>{ const name=inp.value.trim(); if(!name||name===p.name) return; btn.disabled=true; await guardarPersona(pid,{name},st); renderPersons(); renderRoster(); });
-  row.after(f);
-}
+// La ficha que se despliega al tocar un nombre está en 4b_fichas.js
 function renderPersons(){
   renderCtx(); const list=$("n-list"); list.innerHTML=""; const season=curSeasonKey(); const ps=personSeasons();
   const cur = ctx.season===curSeasonKey();
@@ -842,7 +851,7 @@ function renderPersons(){
   all.forEach(p=>{
     const off=p.active===false; const soc=p.socia&&p.socia[season]; const div=document.createElement("div"); div.className="person";
     const hist=ps[p.id]?[...ps[p.id].seasons].sort().join(", "):"";
-    div.innerHTML=`<button class="name linklike ${off?"off":""}" type="button" data-ficha="${esc(p.id)}" aria-label="Ficha de ${esc(p.name)}">${esc(p.name)}<small>${off?("baja"+(p.to?" desde "+esc(monthName(p.to)):"")+(hist?" · "+esc(hist):"")):(soc?`sòcia ${esc(season)} · ${Number(soc.amount)||0} € · ${esc(fmt(soc.date))}`:(p.from?"alta en "+esc(monthName(p.from)):"activa"))}</small></button>
+    div.innerHTML=`<button class="name linklike ${off?"off":""}" type="button" data-ficha="${esc(p.id)}" aria-label="Ficha de ${esc(p.name)}">${esc(p.name)}<small>${off?("baja"+(p.to?" desde "+esc(monthName(p.to)):"")+(hist?" · "+esc(hist):"")):(soc?`socia de la asociación · ${Number(soc.amount)||0} €`:(p.from?"alta en "+esc(monthName(p.from)):"activa"))}</small></button>
       ${off?"<span></span>":`<button class="btn ghost small ${soc?"on":""}" type="button" data-soc="${esc(p.id)}" aria-pressed="${!!soc}" aria-label="Socia: ${esc(p.name)}">Socia</button>`}
       <button class="btn ghost small" type="button" data-id="${esc(p.id)}" aria-label="${off?"Reactivar":"Baja"}: ${esc(p.name)}">${off?"Reactivar":"Baja"}</button>`;
     list.append(div);
@@ -868,6 +877,86 @@ $("n-add").addEventListener("click",async()=>{
   else { await guardarPersona(id,{name,active:true,from:todayISO().slice(0,7),to:""}); setStatus("n-status",`Alta de ${name}.`,"ok"); }
   $("n-add").disabled=false; $("n-name").value=""; renderPersons(); renderRoster();
 });
+
+// ===== 4b. FICHA de cada persona (se despliega al tocar su nombre; se pliega al volver a tocarlo) =====
+// Arriba: estado, socia y baja. En medio: datos personales (DNI, nacimiento, teléfono, email, dirección).
+// Abajo: su historial (temporadas, sesiones, cuotas).
+// Los datos personales NO van con el resto: el puente solo los da con la contraseña de las fichas (la eligen Mario y
+// Emi: la primera que se escribe se queda). Ni la contraseña ni los datos se guardan en el móvil: al cerrar la web
+// se vuelve a pedir.
+const CAMPOS_FICHA=[["dni","DNI","text"],["naixement","Fecha de nacimiento","date"],["telefon","Teléfono","tel"],["email","Email","email"],["adreca","Dirección","text"]];
+let fitxes=null, fitxesError="", fitxesAviso="";   // null = sin cargar
+let clauMem="";                                     // solo en memoria
+const clauFichas=()=>clauMem;
+async function pidePuente(action,d){
+  const r=await fetch(SHEET_URL,{method:"POST",body:JSON.stringify({action,data:Object.assign({clau:clauFichas()},d)})});
+  const j=await r.json(); if(!j.ok) throw new Error(j.error||"error"); return j;
+}
+const textoError=e=>/incorrecta/.test(e.message)?"Contraseña incorrecta.":/corta/.test(e.message)?"La contraseña tiene que tener al menos 4 caracteres.":/desconocida/.test(e.message)?"Falta pegar el puente nuevo en la hoja.":/fetch|network|Failed/i.test(e.message)?"Sin conexión. Vuelve a probar.":"La hoja ha dado un error: "+e.message;
+async function cargarFitxes(){
+  if(!SHEET_URL || !clauFichas()) return;
+  try{ const j=await pidePuente("fitxes",{}); fitxes=j.fitxes||{}; fitxesError=""; fitxesAviso=j.nova?"Contraseña creada. Es la que usaréis Emi y tú a partir de ahora.":""; }
+  catch(e){ fitxes=null; fitxesError=textoError(e); if(/incorrecta|corta/.test(e.message)) clauMem=""; }
+}
+function toggleFicha(pid,row){
+  const next=row.nextElementSibling; if(next&&next.classList.contains("ficha")){ next.remove(); return; }
+  document.querySelectorAll("#n-list .ficha").forEach(f=>f.remove());
+  const f=document.createElement("div"); f.className="ficha"; f.dataset.pid=pid; row.after(f); pintarFicha(f);
+  if(fitxes===null && clauFichas()) cargarFitxes().then(()=>{ if(f.isConnected) pintarFicha(f); });
+}
+function pintarFicha(f){
+  const pid=f.dataset.pid, p=data.persons[pid]; if(!p){ f.remove(); return; }
+  const season=curSeasonKey(), off=p.active===false, soc=p.socia&&p.socia[season];
+  const ses=Object.keys(data.sessions).filter(k=>data.sessions[k].present.includes(pid)).sort((a,b)=>(data.sessions[a].date||a).localeCompare(data.sessions[b].date||b));
+  const conLista=ses.filter(sesConLista);
+  const temps=new Set(ses.map(sesSeason)); Object.keys(data.pagos).forEach(m=>{ if((data.pagos[m].rows||{})[pid]) temps.add(seasonOf(m)); });
+  const pagos=Object.keys(data.pagos).sort().filter(m=>(data.pagos[m].rows||{})[pid]).map(m=>({m,a:Number(data.pagos[m].rows[pid].amount)||0}));
+  const fx=(fitxes&&fitxes[pid])||{};
+  let personal;
+  if(!SHEET_URL) personal=`<p class="note">Los datos personales solo se pueden guardar con la hoja conectada.</p>`;
+  else if(!clauFichas()) personal=`${fitxesError?`<p class="status err">${esc(fitxesError)}</p>`:""}<div class="row nowrap"><input type="password" class="f-clau" autocomplete="off" autocapitalize="none" spellcheck="false" aria-label="Contraseña de las fichas" placeholder="Contraseña" style="flex:1"><button class="btn small f-clauok" type="button">Entrar</button></div>`;
+  else if(fitxes===null && !fitxesError) personal=`<p class="note">Cargando…</p>`;
+  else if(fitxes===null) personal=`<p class="note">${esc(fitxesError)}</p><button class="btn ghost small f-reint" type="button">Volver a probar</button>`;
+  else personal=`<div class="campos">
+      <label>Nombre<input type="text" data-k="name" value="${esc(p.name)}"></label>
+      ${CAMPOS_FICHA.map(([k,l,t])=>`<label>${esc(l)}<input type="${t}" data-k="${k}" value="${esc(fx[k]||"")}" ${t==="tel"?'inputmode="tel"':""} autocomplete="off"></label>`).join("")}
+    </div>
+    ${fitxesAviso?`<p class="status ok">${esc(fitxesAviso)}</p>`:""}
+    <div class="row"><button class="btn small f-save" type="button">Guardar ficha</button><span class="saved f-saved ${fx.savedAt?"ok":""}">${fx.savedAt?"Guardada el "+esc(hora(fx.savedAt)):""}</span></div>`;
+  f.innerHTML=`
+    <div class="row f-estado"><span class="f-est">${off?"De baja"+(p.to?" desde "+esc(monthName(p.to)):""):"Activa"+(p.from?" · alta en "+esc(monthName(p.from)):"")}</span>
+      ${off?"":`<button class="btn ghost small f-soc ${soc?"on":""}" type="button" aria-pressed="${!!soc}" title="Socia de la Associació Laboratori Línia de Fuga (cuota anual)">${soc?"Socia de la asociación ✓":"Socia de la asociación"}</button>`}
+      <button class="btn ghost small f-baja" type="button">${off?"Reactivar":"Dar de baja"}</button></div>
+    <h4>Datos personales</h4>
+    ${personal}
+    <span class="status f-status" aria-live="polite"></span>
+    <h4>Historial</h4>
+    <dl>
+      <dt>Temporadas</dt><dd>${[...temps].sort().map(seasonLabel).map(esc).join("<br>")||"—"}</dd>
+      <dt>Sesiones con lista</dt><dd>${conLista.length}${conLista.length?` <small>(última: ${esc(fmt(data.sessions[conLista[conLista.length-1]].date||conLista[conLista.length-1]))})</small>`:""}</dd>
+      <dt>Cuotas</dt><dd>${pagos.length?`${pagos.length} meses · ${pagos.reduce((a,x)=>a+x.a,0)} €<br><small>${pagos.map(x=>esc(shortMonth(x.m))+" "+x.a+" €").join(" · ")}</small>`:"—"}</dd>
+      <dt>Socia de la asociación</dt><dd>${Object.keys(p.socia||{}).sort().map(k=>`${esc((SEASONS.find(x=>x.id===k)||{}).years||k)} (${Number(p.socia[k].amount)||0} €${p.socia[k].date?", "+esc(fmt(p.socia[k].date)):""})`).join(", ")||"No"}</dd>
+    </dl>`;
+  const st=f.querySelector(".f-status"); const q=c=>f.querySelector(c);
+  const tras=async()=>{ renderPersons(); renderRoster(); const fila=document.querySelector(`[data-ficha="${CSS.escape(pid)}"]`); if(fila) toggleFicha(pid,fila.closest(".person")); };
+  if(q(".f-baja")) q(".f-baja").addEventListener("click",async e=>{ e.target.disabled=true; await guardarPersona(pid, off?{active:true,to:""}:{active:false,to:todayISO().slice(0,7)}, st); tras(); });
+  if(q(".f-soc")) q(".f-soc").addEventListener("click",async e=>{ e.target.disabled=true; const socia={...(p.socia||{})}; if(socia[season]) delete socia[season]; else socia[season]={amount:SOCIA_AMOUNT,date:todayISO()}; await guardarPersona(pid,{socia},st); tras(); });
+  const entrar=async()=>{ const c=q(".f-clau").value.trim(); if(!c) return; clauMem=c; fitxes=null; fitxesError=""; pintarFicha(f); await cargarFitxes(); if(f.isConnected) pintarFicha(f); };
+  if(q(".f-clauok")){ q(".f-clauok").addEventListener("click",entrar); q(".f-clau").addEventListener("keydown",e=>{ if(e.key==="Enter") entrar(); }); }
+  if(q(".f-reint")) q(".f-reint").addEventListener("click",async()=>{ fitxesError=""; pintarFicha(f); await cargarFitxes(); if(f.isConnected) pintarFicha(f); });
+  if(q(".f-save")) q(".f-save").addEventListener("click",async e=>{
+    const b=e.target; const set={}; f.querySelectorAll("[data-k]").forEach(i=>{ if(i.dataset.k!=="name" && i.value.trim()!==(fx[i.dataset.k]||"")) set[i.dataset.k]=i.value.trim(); });
+    const name=q('[data-k="name"]').value.trim();
+    if(!Object.keys(set).length && (!name||name===p.name)){ st.textContent="No hay cambios que guardar."; st.className="status f-status ok"; return; }
+    b.disabled=true; b.textContent="Guardando…"; st.textContent="";
+    try{
+      if(name && name!==p.name) await guardarPersona(pid,{name},st);
+      if(Object.keys(set).length){ const j=await pidePuente("fitxa",{id:pid,set}); fitxes=fitxes||{}; fitxes[pid]=j.fitxa; }
+      pintarFicha(f); const s2=f.querySelector(".f-status"); s2.textContent="Ficha guardada ✓"; s2.className="status f-status ok";
+      if(name && name!==p.name){ renderRoster(); const n=document.querySelector(`[data-ficha="${CSS.escape(pid)}"]`); if(n) n.firstChild.textContent=name; }
+    }catch(err){ b.disabled=false; b.textContent="Guardar ficha"; st.textContent="No se ha guardado. "+textoError(err); st.className="status f-status err"; }
+  });
+}
 
 // ===== 5. RESUMEN y filtros de temporada/grupo =====
 function bars(el, items, fmtV){ // items: [{label, value}], una sola serie, barras verticales
@@ -956,7 +1045,7 @@ function renderHistorial(){
   const box=$("h-list"); box.innerHTML="";
   const pend=store?store.pending():[];
   if(pend.length){
-    const h=document.createElement("h3"); h.className="hday warn"; h.textContent="Pendiente de subir a la hoja"; box.append(h);
+    const h=document.createElement("h3"); h.className="hday warn"; h.textContent="Sin conexión · se actualizará cuando vuelvas a tener conexión"; box.append(h);
     pend.forEach(op=>{ const li=document.createElement("div"); li.className="hitem pend"; li.innerHTML=`<span class="ht">${esc(hora(op.t).split(" a las ")[1]||"")}</span><span class="hx">${esc(textoPendiente(op))}</span>`; box.append(li); });
   }
   const reg=(data.registre||[]).slice();
@@ -997,6 +1086,8 @@ let shownDay=null;
 function syncToday(){ const t=todayISO(); if(shownDay && shownDay!==t && !listaTocada()){ curSessionId=null; setDate(t); } shownDay=t; }
 document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"){ syncToday(); refresh(); } });
 window.addEventListener("focus",syncToday); setInterval(syncToday,60000);
+// con cobertura débil el móvil no siempre avisa de que vuelve la red: cada minuto se reintenta lo pendiente
+setInterval(()=>{ if(store && store.pending().length) store.retry(); },60000);
 window.addEventListener("online",async()=>{ if(store){ await store.retry(); refresh(); } });
 
 (async()=>{

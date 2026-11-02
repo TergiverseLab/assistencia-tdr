@@ -6,13 +6,18 @@ function netejaText(s){ s = String(s==null ? "" : s).trim(); return /^[=+\-@]/.t
 function llistaIds(v){ return String(v==null ? "" : v).split(",").map(x=>x.trim()).filter(Boolean); }
 function unics(a){ const v = []; a.forEach(x=>{ if (x && v.indexOf(x) < 0) v.push(x); }); return v; }
 
-// sesión: cur = {present[], others[]} o null · op = {add[], remove[], others[]|null}
+// sesión: cur = {present[], others[]} o null · op = {add[], remove[], othersAdd[], othersRemove[]}
+// ("others" entero solo lo mandan páginas antiguas)
 function aplicarSessio(cur, op){
   const base = cur ? cur.present.slice() : [];
   const treu = op.remove || [];
   const present = base.filter(p=>treu.indexOf(p) < 0);
   (op.add || []).forEach(p=>{ if (present.indexOf(p) < 0) present.push(p); });
-  const others = op.others != null ? unics(op.others.map(netejaText)) : (cur ? cur.others : []);
+  let others = cur ? cur.others.slice() : [];
+  if (op.others != null && op.othersAdd == null && op.othersRemove == null) others = unics(op.others.map(netejaText));
+  const fora = (op.othersRemove || []).map(x=>netejaText(x).toLowerCase());
+  others = others.filter(o=>fora.indexOf(String(o).toLowerCase()) < 0);
+  (op.othersAdd || []).map(netejaText).forEach(o=>{ if (o && !others.some(x=>String(x).toLowerCase() === o.toLowerCase())) others.push(o); });
   return { present, others,
            afegits: (op.add || []).filter(p=>base.indexOf(p) < 0),
            trets: base.filter(p=>treu.indexOf(p) >= 0) };

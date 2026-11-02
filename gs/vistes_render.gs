@@ -161,6 +161,10 @@ function ordenarPestanyes(){
 
 // ---------- Entrada principal ----------
 function actualitzarVistes(){
+  const props = PropertiesService.getScriptProperties(); props.deleteProperty("vistesPendents"); // al principio: lo que se guarde mientras, se rehará después
+  try { rehacerVistes(); } catch(e) { props.setProperty("vistesPendents", "1"); throw e; }
+}
+function rehacerVistes(){
   const avui = Utilities.formatDate(new Date(), "Europe/Madrid", "yyyy-MM-dd");
   const m = construirModel(rows("persons"), rows("sessions"), rows("pagos"), avui);
   const sts = TEMPORADES.filter(t=>t.ini <= avui).map(t=>estadistiques(t, m));
@@ -171,7 +175,6 @@ function actualitzarVistes(){
   VISTES_OBSOLETES.forEach(n=>{ const sh = ss.getSheetByName(n); if (sh) ss.deleteSheet(sh); });
   sts.filter(st=>st.t.id!=="T1").forEach(st=>vistaQuotes(st, m));
   ordenarPestanyes();
-  PropertiesService.getScriptProperties().deleteProperty("vistesPendents");
 }
 
 // Lo llama el reloj cada 10 minutos: solo rehace si la web ha guardado algo
@@ -180,7 +183,7 @@ function actualitzarSiCal(){
 }
 
 function onOpen(){
-  SpreadsheetApp.getUi().createMenu("Teatre dels Records").addItem("Actualitzar ara", "actualitzarVistes").addToUi();
+  SpreadsheetApp.getUi().createMenu("Teatre dels Records").addItem("Actualitzar ara", "actualitzarVistes").addItem("Olvidé la contraseña de las fichas", "oblidarClauFitxes").addToUi();
 }
 
 // ===================== INSTAL·LACIÓ (ejecutar UNA vez) =====================
@@ -194,16 +197,17 @@ function instalar(){
   const propies = ORDRE_VISTES.concat(Object.keys(SHEETS).map(k=>SHEETS[k][0]), Object.keys(SHEETS).map(k=>SHEETS[k][2]));
   Object.keys(SHEETS).forEach(k=>sheet(k)); // renombra las de datos si tenían el nombre antiguo y crea el Registre
   { const sh = sheet("sessions"); sh.getRange(1, 1, sh.getMaxRows(), 1).setNumberFormat("@"); }
+  { const sh = sheet("registre"); sh.getRange(1, 3, sh.getMaxRows(), 1).setNumberFormat("@"); }
   const noms = ss.getSheets().map(sh=>sh.getName()).filter(n=>!propies.includes(n));
   if (noms.length){
     const nomArxiu = "Arxiu · pestanyes originals (Excel d'Emi) · Assistència i quotes TdR";
     let carpeta = null; try { carpeta = DriveApp.getFileById(ss.getId()).getParents().next(); } catch(e) {}
-    let arxiu = null;                                   // si un intento anterior ya lo creó, se reutiliza
+    let arxiu = null, arxiuNou = false;                 // si un intento anterior ya lo creó, se reutiliza
     if (carpeta){ const it = carpeta.getFilesByName(nomArxiu); if (it.hasNext()) arxiu = SpreadsheetApp.open(it.next()); }
-    if (!arxiu){ arxiu = SpreadsheetApp.create(nomArxiu); if (carpeta) try { DriveApp.getFileById(arxiu.getId()).moveTo(carpeta); } catch(e) {} }
+    if (!arxiu){ arxiu = SpreadsheetApp.create(nomArxiu); arxiuNou = true; if (carpeta) try { DriveApp.getFileById(arxiu.getId()).moveTo(carpeta); } catch(e) {} }
     noms.forEach(n=>{ const sh = ss.getSheetByName(n);
       if (sh && !arxiu.getSheetByName(n)) try { sh.copyTo(arxiu).setName(n); } catch(e) { Logger.log("No s'ha pogut copiar «" + n + "»: " + e); } });
-    arxiu.getSheets().filter(sh=>!noms.includes(sh.getName())).forEach(sh=>{ if (arxiu.getSheets().length > 1) arxiu.deleteSheet(sh); });
+    if (arxiuNou) arxiu.getSheets().filter(sh=>!noms.includes(sh.getName())).forEach(sh=>{ if (arxiu.getSheets().length > 1) arxiu.deleteSheet(sh); }); // solo la hoja vacía del archivo nuevo
     if (!ss.getSheetByName("Inici")) ss.insertSheet("Inici");  // una hoja tiene que quedar siempre
     SpreadsheetApp.flush();
     noms.forEach(n=>{ const sh = ss.getSheetByName(n);
@@ -215,6 +219,9 @@ function instalar(){
     const id = norm(v[i][0]);
     if (id === "2026-11-02" || id === "2026-06-10" || (id === "2026-11-04" && !String(v[i][3]).trim())) shS.deleteRow(i+1);
   }
+  // nombres corregidos a mano (2/11/2026): "Mary Rodríguez", sin el "(Mary Jo)"
+  { const shP = sheet("persons"); const vp = shP.getDataRange().getValues();
+    for (let i = 1; i < vp.length; i++) if (String(vp[i][1]) === "Mary Rodríguez (Mary Jo)") shP.getRange(i+1, 2).setValue("Mary Rodríguez"); }
   actualitzarVistes();
   ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==="actualitzarSiCal").forEach(t=>ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger("actualitzarSiCal").timeBased().everyMinutes(10).create();

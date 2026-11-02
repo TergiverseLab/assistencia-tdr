@@ -10,6 +10,7 @@ const SHEETS = {
   pagos:    ["dades · Pagaments", ["mes","persona (id)","import","data pagament","actualitzat"], "Pagaments"],
   settings: ["dades · Config",    ["clau","valor","actualitzat"], "Config"],
   registre: ["dades · Registre",  ["data","acció","referència","detall"], ""],
+  fitxes:   ["dades · Fitxes",    ["id","DNI","data de naixement","telèfon","email","adreça","actualitzat"], ""], // datos personales: solo con clave
 };
 
 function sheet(key){
@@ -20,6 +21,8 @@ function sheet(key){
   if (!sh){
     sh = ss.insertSheet(name); sh.appendRow(header); sh.setFrozenRows(1);
     if (key === "sessions") sh.getRange(1, 1, sh.getMaxRows(), 1).setNumberFormat("@"); // ids como texto, no fechas
+    if (key === "registre") sh.getRange(1, 3, sh.getMaxRows(), 1).setNumberFormat("@");
+    if (key === "fitxes") sh.getRange(1, 1, sh.getMaxRows(), 6).setNumberFormat("@");
   }
   return sh;
 }
@@ -51,14 +54,18 @@ function llegirTot(){
     byMonth[m].rows[String(r[1])] = {amount:Number(r[2])||0, date:fmtDate(r[3]), savedAt:iso(r[4])}; });
   const settings = {}; rows("settings").filter(r=>r[0]).forEach(r=>{ try{ settings[String(r[0])] = JSON.parse(r[1]); }catch(e){ settings[String(r[0])] = r[1]; } });
   const reg = rows("registre").filter(r=>r[0]);
-  const registre = reg.slice(-400).reverse().map(r=>({ t:iso(r[0]), accio:String(r[1]), ref:String(r[2]), text:String(r[3]) }));
+  const refReg = r=>{ const a = String(r[1]); return a==="sessio" ? norm(r[2]) : (a==="pagaments"||a==="mes") ? fmtMonth(r[2]) : String(r[2]); };
+  const registre = reg.slice(-400).reverse().map(r=>({ t:iso(r[0]), accio:String(r[1]), ref:refReg(r), text:String(r[3]) }));
   return { ok:true, persons, sessions, pagos:Object.values(byMonth), settings, registre };
 }
+// La caché va por versión: cada guardado sube la versión, así que una lectura lenta que empezó antes de un
+// guardado se queda en una versión que ya nadie pide (nunca se sirven datos viejos).
+function versio(){ return PropertiesService.getScriptProperties().getProperty("versio") || "0"; }
 function doGet(){
-  const cache = CacheService.getScriptCache(); const hit = cache.get("tot");
+  const cache = CacheService.getScriptCache(); const k = "tot:" + versio(); const hit = cache.get(k);
   if (hit) return outText(hit);
   const json = JSON.stringify(llegirTot());
-  if (json.length < 95000) cache.put("tot", json, 21600);
+  if (json.length < 90000) try { cache.put(k, json, 21600); } catch(e) {}
   return outText(json);
 }
 
@@ -68,10 +75,13 @@ function doPost(e){
   try { lock.waitLock(20000); } catch(err) { return out({ok:false, error:"ocupado", retry:true}); }
   try{
     const body = JSON.parse(e.postData.contents); const d = body.data || {}; const ara = new Date(); const res = {ok:true};
+    validar(body.action, d);
+    if (body.action === "fitxes"){ const nova = comprovarClau(d) === "nueva"; return out({ok:true, nova, fitxes:llegirFitxes()}); } // solo lectura
     if (body.action === "sessio") res.session = opSessio(d, ara);
     else if (body.action === "pagaments") res.pagos = opPagaments(d, ara);
     else if (body.action === "persona") res.person = opPersona(d, ara);
     else if (body.action === "mes") res.mes = opMes(d, ara);
+    else if (body.action === "fitxa"){ comprovarClau(d); res.fitxa = opFitxa(d, ara); }
     // acciones de versiones anteriores de la web (por si un móvil tiene la página vieja abierta)
     else if (body.action === "session"){ const id = d.id || d.date; opSessio({id, date:d.date, group:d.group||"", add:d.present||[], remove:[], others:d.others||[]}, ara); }
     else if (body.action === "person"){ opPersona({id:d.id, set:{name:d.name, active:d.active!==false, from:d.from||"", to:d.to||"", socia:d.socia||{}}}, ara); }
@@ -83,7 +93,8 @@ function doPost(e){
     }
     else if (body.action === "settings"){ Object.keys(d||{}).forEach(k => upsert("settings", [0], [k, JSON.stringify(d[k]), ara])); }
     else return out({ok:false, error:"acción desconocida"});
-    CacheService.getScriptCache().remove("tot");
+    SpreadsheetApp.flush();
+    PropertiesService.getScriptProperties().setProperty("versio", String(ara.getTime()));
     PropertiesService.getScriptProperties().setProperty("vistesPendents", "1"); // las vistas se rehacen solas en <10 min
     return out(res);
   } catch(err) { return out({ok:false, error:String(err)}); }
@@ -108,8 +119,13 @@ function opPagaments(d, ara){
   const files = v.slice(1).filter(r=>r[0]!=="" && r[1]!=="").map(r=>({mes:fmtMonth(r[0]), pid:String(r[1]), imp:Number(r[2])||0, data:fmtDate(r[3]), act:r[4]}));
   const r = aplicarPagaments(files, d);
   const nou = r.files.map(f=>[f.mes, f.pid, f.imp, f.data, f.nou ? ara : f.act]);
-  if (v.length > 1) sh.getRange(2, 1, v.length-1, 5).clearContent();  // se reescribe de una vez, en memoria
-  if (nou.length) sh.getRange(2, 1, nou.length, 5).setValues(nou);
+  // se reescribe de una vez y sin borrar antes: si la hoja no tiene filas, primero se amplía
+  const n = Math.max(v.length-1, nou.length);
+  if (n > 0){
+    const falta = n + 1 - sh.getMaxRows(); if (falta > 0) sh.insertRowsAfter(sh.getMaxRows(), falta);
+    while (nou.length < n) nou.push(["","","","",""]);
+    sh.getRange(2, 1, n, 5).setValues(nou);
+  }
   registrar("pagaments", d.month, textPagaments(d.month, r.canvis, nomsPersones()), ara);
   const rowsMes = {}; r.files.filter(f=>f.mes===d.month).forEach(f=>{ rowsMes[f.pid] = {amount:f.imp, date:f.data, savedAt:iso(f.nou ? ara : f.act)}; });
   return {month:d.month, rows:rowsMes};
@@ -136,4 +152,22 @@ function opMes(d, ara){
   upsert("settings", [0], ["tancat:" + m, JSON.stringify(tancat), ara]);
   registrar("mes", m, (tancat ? "Mes cerrado: " : "Mes reabierto: ") + mesES(m), ara);
   return {month:m, tancat};
+}
+
+// ---------- Validación: lo que no tiene la forma esperada no entra en la hoja ----------
+const RX = { persona:/^[a-z0-9-]{1,80}$/, sessio:/^\d{4}-\d{2}-\d{2}(-[a-z]+)?$/, mes:/^\d{4}-\d{2}$/, data:/^\d{4}-\d{2}-\d{2}$/ };
+function validar(accio, d){
+  const mal = q=>{ throw new Error("dato no válido: " + q); };
+  const ids = (a,q)=>{ if (a != null && (!Array.isArray(a) || a.some(x=>!RX.persona.test(String(x))))) mal(q); };
+  if (accio === "sessio"){
+    if (!RX.sessio.test(String(d.id))) mal("sesión"); if (d.date && !RX.data.test(String(d.date))) mal("fecha");
+    if (d.group != null && !/^[\wàèéíòóúç ·-]{0,20}$/i.test(String(d.group))) mal("grupo");
+    ids(d.add,"lista"); ids(d.remove,"lista"); ids(d.othersRemove,"probar");
+    ["others","othersAdd"].forEach(k=>{ if (d[k] != null && (!Array.isArray(d[k]) || d[k].some(x=>String(x).length > 80))) mal("probar"); });
+  } else if (accio === "pagaments"){
+    if (!RX.mes.test(String(d.month))) mal("mes");
+    Object.keys(d.set||{}).forEach(pid=>{ const r = d.set[pid]||{}; if (!RX.persona.test(pid) || !isFinite(Number(r.amount)) || (r.date && !RX.data.test(String(r.date)))) mal("pago"); });
+    ids(d.unset,"pago");
+  } else if (accio === "persona" || accio === "fitxa"){ if (!RX.persona.test(String(d.id))) mal("persona"); }
+  else if (accio === "mes"){ if (!RX.mes.test(String(d.month))) mal("mes"); }
 }

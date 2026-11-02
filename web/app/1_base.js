@@ -78,7 +78,7 @@ $("save").addEventListener("click",()=>{ if(guardando) return; if(vistaActual===
 // ---------- avisos de cambios pendientes de subir ----------
 function updPendientes(){
   const n = store && store.pending ? store.pending().length : 0; const b=$("banner");
-  if(n){ b.hidden=false; b.className="banner warn"; b.innerHTML=`${n} ${n===1?"cambio guardado":"cambios guardados"} en este móvil, pendientes de subir a la hoja. Se enviarán solos al recuperar la conexión. <button class="btn ghost small" type="button" id="b-retry">Reintentar ahora</button>`;
+  if(n){ b.hidden=false; b.className="banner warn"; b.innerHTML=`Sin conexión. La información se actualizará cuando vuelvas a tener conexión. <button class="btn ghost small" type="button" id="b-retry">Reintentar ahora</button>`;
     $("b-retry").onclick=async()=>{ $("b-retry").disabled=true; await store.retry(); updPendientes(); }; }
   else if(b.classList.contains("warn")){ b.hidden=true; b.className="banner"; b.textContent=""; }
 }

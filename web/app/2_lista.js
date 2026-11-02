@@ -90,8 +90,8 @@ function lineaGuardada(estado){
   if(estado==="cola"){ el.textContent=textoEspera(); el.className="saved warn"; return; }
   if(estado==="busy"){ el.textContent="Guardando…"; el.className="saved"; return; }
   if(estado==="subiendo"){ el.textContent="Guardada · subiendo a la hoja…"; el.className="saved ok"; return; }
-  if(s&&s.savedAt){ el.textContent=`Guardada el ${hora(s.savedAt)}`; el.className="saved ok"; }
-  else if(s){ el.textContent=""; el.className="saved"; }
+  if(s && abiertos.has("s:"+curSessionId)){ el.innerHTML=`${CANDADO_ABIERTO}<b>Corrigiendo</b>`; el.className="saved reg"; }
+  else if(s){ el.innerHTML=`${CANDADO}<b>Registrada</b>${s.savedAt?" · "+esc(hora(s.savedAt)):""}`; el.className="saved reg"; }
   else { el.textContent="Sesión nueva: todavía no se ha guardado."; el.className="saved"; }
 }
 function applySesLock(){
@@ -100,7 +100,7 @@ function applySesLock(){
   // Arriba, para una sesión ya registrada: [Corregir registro] (las pasadas) y [Eliminar registro]
   $("l-lockrow").hidden=!has; $("l-lock").hidden=!past;
   $("l-lock").textContent = locked ? "Corregir registro" : "Cancelar corrección";
-  $("l-info").textContent = past && !locked ? "Corrigiendo: cambia lo que haga falta y pulsa Guardar." : "";
+  $("l-info").textContent = past && !locked ? "Cambia lo que haga falta y pulsa Guardar." : ""; lineaGuardada();
   $("l-info").hidden = !$("l-info").textContent;
   $("l-roster").querySelectorAll("input").forEach(c=>c.disabled=locked); $("l-others").disabled=locked; $("l-all").disabled=locked; $("l-clear").disabled=locked;
   if(vistaActual==="lista") botonGuardar();

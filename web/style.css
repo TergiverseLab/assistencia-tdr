@@ -204,3 +204,6 @@ details.rses[open] summary{margin-bottom:6px}
 /* quien no ha pagado, al cerrar el mes o en un mes cerrado */
 .pay.falta .name{color:var(--bad)}
 .pay.falta .name small{color:var(--bad);font-weight:600}
+
+.saved.reg{color:var(--fg)}
+.saved.reg b{font-weight:600}

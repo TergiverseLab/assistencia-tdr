@@ -43,8 +43,12 @@ const sesAsistencia = (k, grupo) => { const v=sesAsisDirecta(k); if(v!=null) ret
 
 // Bloqueo: lo pasado se ve cerrado. "Desbloquear para corregir" abre SOLO en este móvil y al instante; al guardar se vuelve a cerrar.
 const abiertos=new Set();
-const mesTancat = month => !!(data.settings && data.settings["tancat:"+month]===true);   // cerrado a mano con "Cerrar mes"
-const isLocked = month => !abiertos.has("m:"+month) && (month<todayISO().slice(0,7) || mesTancat(month));
+// Cuotas igual que Asistencia: un mes con cuotas ya guardadas queda REGISTRADO (candado); se toca con "Corregir cuotas".
+const mesRegistrado = month => !!(data.pagos[month] && Object.keys(data.pagos[month].rows||{}).length);
+const isLocked = month => !abiertos.has("m:"+month) && mesRegistrado(month);
+// candado cerrado (registrado) / abierto (corrigiendo)
+const CANDADO='<svg class="candado" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+const CANDADO_ABIERTO='<svg class="candado" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.6-1.8"/></svg>';
 // Una sesión YA REGISTRADA (de cualquier día) queda cerrada: para cambiarla, "Corregir registro". Una nueva se marca directamente.
 const isSesLocked = sid => { const s=sid?data.sessions[sid]:null; if(!s) return false; return !abiertos.has("s:"+sid); };
 
@@ -70,7 +74,9 @@ function show(v){
 
 // ---------- botón Guardar: "Guardando…" al instante, bloqueado hasta terminar ----------
 let guardando=false, flashT=null, flashOn=false;
-const etiquetaGuardar = () => vistaActual==="pagos" ? "Guardar cuotas" : "Guardar asistencia";
+// corrigiendo algo ya registrado → "Guardar cambios"; si es nuevo → "Guardar asistencia" / "Guardar cuotas"
+const etiquetaGuardar = () => vistaActual==="pagos" ? (abiertos.has("m:"+curMonth) ? "Guardar cambios" : "Guardar cuotas")
+                                                     : (curSessionId && abiertos.has("s:"+curSessionId) ? "Guardar cambios" : "Guardar asistencia");
 function botonGuardar(){ const b=$("save"); if(guardando||flashOn) return; b.classList.remove("saved","failed","busy"); b.textContent=etiquetaGuardar();
   b.disabled = vistaActual==="lista" ? isSesLocked(curSessionId) : vistaActual==="pagos" ? isLocked(curMonth) : false; }
 function botonEstado(estado,txt){ const b=$("save"); clearTimeout(flashT); b.classList.remove("saved","failed","busy");

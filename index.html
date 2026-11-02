@@ -219,6 +219,9 @@ details.rses[open] summary{margin-bottom:6px}
 /* quien no ha pagado, al cerrar el mes o en un mes cerrado */
 .pay.falta .name{color:var(--bad)}
 .pay.falta .name small{color:var(--bad);font-weight:600}
+
+.saved.reg{color:var(--fg)}
+.saved.reg b{font-weight:600}
 </style>
 </head>
 <body>
@@ -529,7 +532,7 @@ async function pickStore(){
 
 (function(){
 // ===== 1. BASE: utilidades, temporadas, navegación, botón Guardar =====
-const APP_VERSION = "03/11 00:48:08";
+const APP_VERSION = "03/11 00:52:32";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;          // cuota mensual habitual (septiembre fue 25)
 const $ = id => document.getElementById(id);
@@ -573,8 +576,12 @@ const sesAsistencia = (k, grupo) => { const v=sesAsisDirecta(k); if(v!=null) ret
 
 // Bloqueo: lo pasado se ve cerrado. "Desbloquear para corregir" abre SOLO en este móvil y al instante; al guardar se vuelve a cerrar.
 const abiertos=new Set();
-const mesTancat = month => !!(data.settings && data.settings["tancat:"+month]===true);   // cerrado a mano con "Cerrar mes"
-const isLocked = month => !abiertos.has("m:"+month) && (month<todayISO().slice(0,7) || mesTancat(month));
+// Cuotas igual que Asistencia: un mes con cuotas ya guardadas queda REGISTRADO (candado); se toca con "Corregir cuotas".
+const mesRegistrado = month => !!(data.pagos[month] && Object.keys(data.pagos[month].rows||{}).length);
+const isLocked = month => !abiertos.has("m:"+month) && mesRegistrado(month);
+// candado cerrado (registrado) / abierto (corrigiendo)
+const CANDADO='<svg class="candado" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+const CANDADO_ABIERTO='<svg class="candado" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.6-1.8"/></svg>';
 // Una sesión YA REGISTRADA (de cualquier día) queda cerrada: para cambiarla, "Corregir registro". Una nueva se marca directamente.
 const isSesLocked = sid => { const s=sid?data.sessions[sid]:null; if(!s) return false; return !abiertos.has("s:"+sid); };
 
@@ -600,7 +607,9 @@ function show(v){
 
 // ---------- botón Guardar: "Guardando…" al instante, bloqueado hasta terminar ----------
 let guardando=false, flashT=null, flashOn=false;
-const etiquetaGuardar = () => vistaActual==="pagos" ? "Guardar cuotas" : "Guardar asistencia";
+// corrigiendo algo ya registrado → "Guardar cambios"; si es nuevo → "Guardar asistencia" / "Guardar cuotas"
+const etiquetaGuardar = () => vistaActual==="pagos" ? (abiertos.has("m:"+curMonth) ? "Guardar cambios" : "Guardar cuotas")
+                                                     : (curSessionId && abiertos.has("s:"+curSessionId) ? "Guardar cambios" : "Guardar asistencia");
 function botonGuardar(){ const b=$("save"); if(guardando||flashOn) return; b.classList.remove("saved","failed","busy"); b.textContent=etiquetaGuardar();
   b.disabled = vistaActual==="lista" ? isSesLocked(curSessionId) : vistaActual==="pagos" ? isLocked(curMonth) : false; }
 function botonEstado(estado,txt){ const b=$("save"); clearTimeout(flashT); b.classList.remove("saved","failed","busy");
@@ -745,8 +754,8 @@ function lineaGuardada(estado){
   if(estado==="cola"){ el.textContent=textoEspera(); el.className="saved warn"; return; }
   if(estado==="busy"){ el.textContent="Guardando…"; el.className="saved"; return; }
   if(estado==="subiendo"){ el.textContent="Guardada · subiendo a la hoja…"; el.className="saved ok"; return; }
-  if(s&&s.savedAt){ el.textContent=`Guardada el ${hora(s.savedAt)}`; el.className="saved ok"; }
-  else if(s){ el.textContent=""; el.className="saved"; }
+  if(s && abiertos.has("s:"+curSessionId)){ el.innerHTML=`${CANDADO_ABIERTO}<b>Corrigiendo</b>`; el.className="saved reg"; }
+  else if(s){ el.innerHTML=`${CANDADO}<b>Registrada</b>${s.savedAt?" · "+esc(hora(s.savedAt)):""}`; el.className="saved reg"; }
   else { el.textContent="Sesión nueva: todavía no se ha guardado."; el.className="saved"; }
 }
 function applySesLock(){
@@ -755,7 +764,7 @@ function applySesLock(){
   // Arriba, para una sesión ya registrada: [Corregir registro] (las pasadas) y [Eliminar registro]
   $("l-lockrow").hidden=!has; $("l-lock").hidden=!past;
   $("l-lock").textContent = locked ? "Corregir registro" : "Cancelar corrección";
-  $("l-info").textContent = past && !locked ? "Corrigiendo: cambia lo que haga falta y pulsa Guardar." : "";
+  $("l-info").textContent = past && !locked ? "Cambia lo que haga falta y pulsa Guardar." : ""; lineaGuardada();
   $("l-info").hidden = !$("l-info").textContent;
   $("l-roster").querySelectorAll("input").forEach(c=>c.disabled=locked); $("l-others").disabled=locked; $("l-all").disabled=locked; $("l-clear").disabled=locked;
   if(vistaActual==="lista") botonGuardar();
@@ -835,22 +844,14 @@ function payPersons(month){
 function shiftMonth(n){ const [y,m]=curMonth.split("-").map(Number); const d=new Date(y,m-1+n,1); curMonth=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; renderPagos(); }
 $("p-pick").addEventListener("change",()=>{ if(/^\d{4}-\d{2}$/.test($("p-pick").value)){ curMonth=$("p-pick").value; renderPagos(); } });
 $("p-default").addEventListener("input",()=>{ $("p-list").querySelectorAll(".tog[data-id]:not(.on)").forEach(b=>{ $("p-list").querySelector(`input[data-id="${CSS.escape(b.dataset.id)}"]`).value=defAmount(); }); updTotal(); });
-// Un mes está ABIERTO (el mes en curso, hasta pulsar "Cerrar mes") o CERRADO (a mano, o ya pasado).
-// Cerrado = candado; solo se toca con "Corregir cuotas" (pide confirmación) y al guardar vuelve a quedar cerrado.
-const CANDADO='<svg class="candado" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+// Cuotas como Asistencia: al guardar, el mes queda registrado (candado). "Corregir cuotas" lo abre (con confirmación);
+// al guardar se vuelve a cerrar. "Cancelar corrección" lo deja como estaba.
 $("p-lock").addEventListener("click",()=>{
   const m=curMonth, k="m:"+m;
   if(abiertos.has(k)){ // corrigiendo → cancelar
-    const cancelar=()=>{ abiertos.delete(k); clearPagDraft(); renderPagos(); setStatus("p-status","Corrección cancelada: el mes queda como estaba.","ok"); };
+    const cancelar=()=>{ abiertos.delete(k); clearPagDraft(); renderPagos(); setStatus("p-status","Corrección cancelada: las cuotas quedan como estaban.","ok"); };
     if(pagosTocados()) confirmar($("p-lockrow"), "Hay cambios sin guardar. ¿Cancelar y descartarlos?", "Sí, descartar", cancelar); else cancelar(); return; }
-  if(!isLocked(m)){
-    if(pagosTocados()){ setStatus("p-status","Antes de cerrar el mes, guarda los cambios.","err"); return; }
-    // al ir a cerrar, quien no tiene la cuota marcada se resalta en la lista
-    const falta=[...$("p-list").querySelectorAll(".tog[data-id]:not(.on)")].map(b=>b.closest(".pay"));
-    falta.forEach(r=>r.classList.add("falta"));
-    const texto = `¿Cerrar ${monthName(m)}?`;   // quien falta por pagar ya se ve en rojo en la lista
-    confirmar($("p-lockrow"), texto, "Sí, cerrar", ()=>marcarMes(m,true), false, ()=>falta.forEach(r=>r.classList.remove("falta"))); return; }
-  confirmar($("p-lockrow"), `${monthName(m)[0].toUpperCase()+monthName(m).slice(1)} ya está cerrado. ¿Seguro que quieres corregirlo?`, "Sí, corregir", ()=>{ abiertos.add(k); renderPagos(); setStatus("p-status",""); });
+  confirmar($("p-lockrow"), `¿Seguro que quieres corregir las cuotas de ${monthName(m)}?`, "Sí, corregir", ()=>{ abiertos.add(k); renderPagos(); setStatus("p-status",""); });
 });
 async function marcarMes(m,tancat){
   const op={action:"mes", key:"c:"+m, data:{month:m, tancat}}; aplicarOp(data,op); abiertos.delete("m:"+m); renderPagos();
@@ -885,15 +886,15 @@ function renderPagos(){
   basePag={month:curMonth, rows:JSON.parse(JSON.stringify(rows))};
   const list=$("p-list"); list.innerHTML="";
   const abiertoTemp=abiertos.has("m:"+curMonth);
-  $("p-lockrow").hidden = false;
-  $("p-lock").textContent = abiertoTemp ? "Cancelar corrección" : !locked ? "Cerrar mes" : "Corregir cuotas";
-  $("p-lockmsg").innerHTML = abiertoTemp ? "Corrigiendo: cambia lo que haga falta y pulsa Guardar." : locked ? `${CANDADO}<b>Mes cerrado</b>` : "";
+  $("p-lockrow").hidden = !mesRegistrado(curMonth);
+  $("p-lock").textContent = abiertoTemp ? "Cancelar corrección" : "Corregir cuotas";
+  $("p-lockmsg").textContent = abiertoTemp ? "Cambia lo que haga falta y pulsa Guardar." : "";
   $("p-default").disabled = locked; $("p-defaultwrap").hidden = past || locked;
   const personas=payPersons(curMonth);
   if(!personas.length){ list.innerHTML='<p class="empty">No consta ningún pago en este mes.</p>'; }
   personas.forEach(p=>{
-    const r=rows[p.id]; const div=document.createElement("div"); div.className="pay"+(locked && !r ? " falta" : "");   // mes cerrado: quien no pagó, resaltado
-    div.innerHTML=`<div class="name">${esc(p.name)}<small>${p.active===false?"(baja) ":""}${r&&r.date?"pagado "+esc(fmt(r.date)):locked?"sin pagar":"pendiente"}</small></div>
+    const r=rows[p.id]; const div=document.createElement("div"); div.className="pay"+(mesRegistrado(curMonth) && !r ? " falta" : "");   // mes registrado: quien no ha pagado, en rojo
+    div.innerHTML=`<div class="name">${esc(p.name)}<small>${p.active===false?"(baja) ":""}${r&&r.date?"pagado "+esc(fmt(r.date)):"pendiente"}</small></div>
       <input type="number" inputmode="decimal" min="0" step="1" value="${esc(r?r.amount:defAmount())}" class="${r?"":"dim"}" aria-label="Importe ${esc(p.name)}" data-id="${esc(p.id)}" ${locked?"disabled":""}>
       <button class="tog ${r?"on":""}" type="button" data-id="${esc(p.id)}" aria-pressed="${!!r}" aria-label="Pagado ${esc(p.name)}" ${locked?"disabled":""}>${r?"✓":"○"}</button>`;
     list.append(div);
@@ -926,7 +927,9 @@ function lineaPagos(estado){
     else { el.textContent="Guardadas · subiendo a la hoja…"; el.className="saved ok"; }                 // subiendo
     return; }
   const ult=Object.values(rows).map(r=>r.savedAt||"").sort().pop();
-  el.textContent = ult ? `Último cambio guardado el ${hora(ult)}` : ""; el.className="saved"+(ult?" ok":"");
+  if(abiertos.has("m:"+curMonth)){ el.innerHTML=`${CANDADO_ABIERTO}<b>Corrigiendo</b>`; el.className="saved reg"; return; }
+  if(mesRegistrado(curMonth)){ el.innerHTML=`${CANDADO}<b>Registradas</b>${ult?" · "+esc(hora(ult)):""}`; el.className="saved reg"; return; }
+  el.textContent=""; el.className="saved";
 }
 function updTotal(){ const {ui,soc}=estadoPantalla(); const on=Object.values(ui).filter(u=>u.on); let t=on.reduce((a,u)=>a+u.amount,0); const ns=Object.keys(soc).length; t+=Object.values(soc).reduce((a,v)=>a+v,0);
   $("p-total").textContent=`${on.length} pagos${ns?` + ${ns} socia`:""} · ${t} €`; }

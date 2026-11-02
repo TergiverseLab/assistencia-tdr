@@ -12,22 +12,14 @@ function payPersons(month){
 function shiftMonth(n){ const [y,m]=curMonth.split("-").map(Number); const d=new Date(y,m-1+n,1); curMonth=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; renderPagos(); }
 $("p-pick").addEventListener("change",()=>{ if(/^\d{4}-\d{2}$/.test($("p-pick").value)){ curMonth=$("p-pick").value; renderPagos(); } });
 $("p-default").addEventListener("input",()=>{ $("p-list").querySelectorAll(".tog[data-id]:not(.on)").forEach(b=>{ $("p-list").querySelector(`input[data-id="${CSS.escape(b.dataset.id)}"]`).value=defAmount(); }); updTotal(); });
-// Un mes está ABIERTO (el mes en curso, hasta pulsar "Cerrar mes") o CERRADO (a mano, o ya pasado).
-// Cerrado = candado; solo se toca con "Corregir cuotas" (pide confirmación) y al guardar vuelve a quedar cerrado.
-const CANDADO='<svg class="candado" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+// Cuotas como Asistencia: al guardar, el mes queda registrado (candado). "Corregir cuotas" lo abre (con confirmación);
+// al guardar se vuelve a cerrar. "Cancelar corrección" lo deja como estaba.
 $("p-lock").addEventListener("click",()=>{
   const m=curMonth, k="m:"+m;
   if(abiertos.has(k)){ // corrigiendo → cancelar
-    const cancelar=()=>{ abiertos.delete(k); clearPagDraft(); renderPagos(); setStatus("p-status","Corrección cancelada: el mes queda como estaba.","ok"); };
+    const cancelar=()=>{ abiertos.delete(k); clearPagDraft(); renderPagos(); setStatus("p-status","Corrección cancelada: las cuotas quedan como estaban.","ok"); };
     if(pagosTocados()) confirmar($("p-lockrow"), "Hay cambios sin guardar. ¿Cancelar y descartarlos?", "Sí, descartar", cancelar); else cancelar(); return; }
-  if(!isLocked(m)){
-    if(pagosTocados()){ setStatus("p-status","Antes de cerrar el mes, guarda los cambios.","err"); return; }
-    // al ir a cerrar, quien no tiene la cuota marcada se resalta en la lista
-    const falta=[...$("p-list").querySelectorAll(".tog[data-id]:not(.on)")].map(b=>b.closest(".pay"));
-    falta.forEach(r=>r.classList.add("falta"));
-    const texto = `¿Cerrar ${monthName(m)}?`;   // quien falta por pagar ya se ve en rojo en la lista
-    confirmar($("p-lockrow"), texto, "Sí, cerrar", ()=>marcarMes(m,true), false, ()=>falta.forEach(r=>r.classList.remove("falta"))); return; }
-  confirmar($("p-lockrow"), `${monthName(m)[0].toUpperCase()+monthName(m).slice(1)} ya está cerrado. ¿Seguro que quieres corregirlo?`, "Sí, corregir", ()=>{ abiertos.add(k); renderPagos(); setStatus("p-status",""); });
+  confirmar($("p-lockrow"), `¿Seguro que quieres corregir las cuotas de ${monthName(m)}?`, "Sí, corregir", ()=>{ abiertos.add(k); renderPagos(); setStatus("p-status",""); });
 });
 async function marcarMes(m,tancat){
   const op={action:"mes", key:"c:"+m, data:{month:m, tancat}}; aplicarOp(data,op); abiertos.delete("m:"+m); renderPagos();
@@ -62,15 +54,15 @@ function renderPagos(){
   basePag={month:curMonth, rows:JSON.parse(JSON.stringify(rows))};
   const list=$("p-list"); list.innerHTML="";
   const abiertoTemp=abiertos.has("m:"+curMonth);
-  $("p-lockrow").hidden = false;
-  $("p-lock").textContent = abiertoTemp ? "Cancelar corrección" : !locked ? "Cerrar mes" : "Corregir cuotas";
-  $("p-lockmsg").innerHTML = abiertoTemp ? "Corrigiendo: cambia lo que haga falta y pulsa Guardar." : locked ? `${CANDADO}<b>Mes cerrado</b>` : "";
+  $("p-lockrow").hidden = !mesRegistrado(curMonth);
+  $("p-lock").textContent = abiertoTemp ? "Cancelar corrección" : "Corregir cuotas";
+  $("p-lockmsg").textContent = abiertoTemp ? "Cambia lo que haga falta y pulsa Guardar." : "";
   $("p-default").disabled = locked; $("p-defaultwrap").hidden = past || locked;
   const personas=payPersons(curMonth);
   if(!personas.length){ list.innerHTML='<p class="empty">No consta ningún pago en este mes.</p>'; }
   personas.forEach(p=>{
-    const r=rows[p.id]; const div=document.createElement("div"); div.className="pay"+(locked && !r ? " falta" : "");   // mes cerrado: quien no pagó, resaltado
-    div.innerHTML=`<div class="name">${esc(p.name)}<small>${p.active===false?"(baja) ":""}${r&&r.date?"pagado "+esc(fmt(r.date)):locked?"sin pagar":"pendiente"}</small></div>
+    const r=rows[p.id]; const div=document.createElement("div"); div.className="pay"+(mesRegistrado(curMonth) && !r ? " falta" : "");   // mes registrado: quien no ha pagado, en rojo
+    div.innerHTML=`<div class="name">${esc(p.name)}<small>${p.active===false?"(baja) ":""}${r&&r.date?"pagado "+esc(fmt(r.date)):"pendiente"}</small></div>
       <input type="number" inputmode="decimal" min="0" step="1" value="${esc(r?r.amount:defAmount())}" class="${r?"":"dim"}" aria-label="Importe ${esc(p.name)}" data-id="${esc(p.id)}" ${locked?"disabled":""}>
       <button class="tog ${r?"on":""}" type="button" data-id="${esc(p.id)}" aria-pressed="${!!r}" aria-label="Pagado ${esc(p.name)}" ${locked?"disabled":""}>${r?"✓":"○"}</button>`;
     list.append(div);
@@ -103,7 +95,9 @@ function lineaPagos(estado){
     else { el.textContent="Guardadas · subiendo a la hoja…"; el.className="saved ok"; }                 // subiendo
     return; }
   const ult=Object.values(rows).map(r=>r.savedAt||"").sort().pop();
-  el.textContent = ult ? `Último cambio guardado el ${hora(ult)}` : ""; el.className="saved"+(ult?" ok":"");
+  if(abiertos.has("m:"+curMonth)){ el.innerHTML=`${CANDADO_ABIERTO}<b>Corrigiendo</b>`; el.className="saved reg"; return; }
+  if(mesRegistrado(curMonth)){ el.innerHTML=`${CANDADO}<b>Registradas</b>${ult?" · "+esc(hora(ult)):""}`; el.className="saved reg"; return; }
+  el.textContent=""; el.className="saved";
 }
 function updTotal(){ const {ui,soc}=estadoPantalla(); const on=Object.values(ui).filter(u=>u.on); let t=on.reduce((a,u)=>a+u.amount,0); const ns=Object.keys(soc).length; t+=Object.values(soc).reduce((a,v)=>a+v,0);
   $("p-total").textContent=`${on.length} pagos${ns?` + ${ns} socia`:""} · ${t} €`; }

@@ -96,10 +96,10 @@ th{font:600 .75rem var(--display);text-transform:uppercase;letter-spacing:.05em;
 td.n,th.n{text-align:right;white-space:nowrap}
 tr.tap{cursor:pointer}
 .empty{color:var(--muted);font-style:italic;margin:0}
-.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .tile{background:var(--soft);border-radius:10px;padding:10px 6px;text-align:center}
 .tile b{display:block;font:700 1.5rem var(--display);font-variant-numeric:tabular-nums}
-.tile span{font-size:.68rem;white-space:nowrap;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.tile span{display:block;font-size:.66rem;line-height:1.25;text-wrap:balance;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
 /* pagos */
 .monthnav{display:grid;grid-template-columns:var(--tap) 1fr var(--tap);gap:8px;align-items:center}
 .monthnav .btn{padding:0}
@@ -183,3 +183,7 @@ textarea{font:inherit;font-size:.85rem;width:100%;min-height:140px;background:va
 .ficha .campos label{display:flex;flex-direction:column;gap:3px;font-size:.8rem;color:var(--muted)}
 .ficha .campos input{font-size:1rem;height:40px}
 .ficha input[type=tel],.ficha input[type=email]{font:inherit;font-size:1rem;height:40px;color:var(--fg);background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:0 12px;width:100%;min-width:0;-webkit-appearance:none;appearance:none}
+
+.rsub{font:600 .82rem var(--display);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:10px 0 0}
+details.rses summary{cursor:pointer;color:var(--muted);font-size:.9rem;padding:4px 0}
+details.rses[open] summary{margin-bottom:6px}

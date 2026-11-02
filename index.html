@@ -371,7 +371,7 @@ async function pickStore(){
 
 // ===== LÓGICA DE LA PÁGINA =====
 (function(){
-const APP_VERSION = "02/11 18:52";
+const APP_VERSION = "02/11 19:39";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;           // cuota mensual habitual (septiembre fue 25)
 const defAmount = () => Number($("p-default").value)||DEFAULT_AMOUNT;
@@ -752,7 +752,11 @@ async function refresh(){
   try{ const d=await store.load(); data=d; if(!$("view-ses").hidden) renderSessions(); if(!$("view-res").hidden) renderSummary(); if(!$("view-pers").hidden) renderPersons(); if(!$("view-pagos").hidden && !dirtyPagos) renderPagos(); if(!$("view-lista").hidden && checked().length===0) renderRoster(); }
   catch(e){} refreshing=false;
 }
-document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") refresh(); });
+// Al volver a la página otro día (p. ej. quedó abierta en el móvil), Lista salta sola a la fecha de hoy
+let shownDay=null;
+function syncToday(){ const t=todayISO(); if(shownDay && shownDay!==t && checked().length===0){ curSessionId=null; setDate(t); } shownDay=t; }
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"){ syncToday(); refresh(); } });
+window.addEventListener("focus",syncToday); setInterval(syncToday,60000);
 
 // ---------- ARRANQUE ----------
 (async()=>{
@@ -763,7 +767,7 @@ document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==
   try{ data=await store.load(); banner(""); }
   catch(e){ banner("No se han podido cargar los datos. Comprueba la conexión y recarga.","err"); }
   if(store.name==="local") banner("Esta copia guarda solo en este dispositivo. No está conectada a la hoja del Drive.","err");
-  setDate(todayISO());
+  setDate(todayISO()); shownDay=todayISO();
 })();
 })();
 </script>

@@ -14,6 +14,7 @@ function sheet(key){
   const [name, header] = SHEETS[key];
   let sh = ss.getSheetByName(name);
   if (!sh){ sh = ss.insertSheet(name); sh.appendRow(header); sh.setFrozenRows(1); }
+  if (key === "sessions") sh.getRange(1, 1, sh.getMaxRows(), 1).setNumberFormat("@"); // ids como texto, no fechas
   return sh;
 }
 function rows(key){ const sh = sheet(key); const v = sh.getDataRange().getValues(); return v.slice(1); }
@@ -52,6 +53,10 @@ function doPost(e){
       for (let i = v.length-1; i >= 1; i--){ if (fmtMonth(v[i][0]) === d.month) sh.deleteRow(i+1); }
       Object.keys(d.rows||{}).forEach(pid => sh.appendRow([d.month, pid, d.rows[pid].amount||0, d.rows[pid].date||"", now]));
       if (d.locked) sh.appendRow([d.month, "__tancat__", "", "", now]); // marca de mes cerrado
+    }
+    else if (body.action === "deleteSession"){
+      const sh = sheet("sessions"); const v = sh.getDataRange().getValues();
+      for (let i = v.length-1; i >= 1; i--){ if (norm(v[i][0]) === norm(d.id)) sh.deleteRow(i+1); }
     }
     else if (body.action === "settings"){ Object.keys(d||{}).forEach(k => upsert("settings", [0], [k, JSON.stringify(d[k]), now])); }
     else return out({ok:false, error:"acción desconocida"});

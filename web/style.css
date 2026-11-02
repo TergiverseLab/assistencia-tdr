@@ -168,7 +168,9 @@ textarea{font:inherit;font-size:.85rem;width:100%;min-height:140px;background:va
 .hitem{display:grid;grid-template-columns:3.2em 1fr;gap:10px;align-items:baseline;text-align:left;width:100%;background:none;border:0;border-bottom:1px solid var(--line);padding:10px 2px;font:inherit;font-size:.95rem;color:var(--fg);cursor:pointer;-webkit-tap-highlight-color:transparent}
 .hitem.pend{cursor:default;color:#6b4500}
 .hitem .ht{font-variant-numeric:tabular-nums;color:var(--muted);font-size:.85rem}
-.hitem .hx{min-width:0;overflow-wrap:anywhere}
+.hitem .hx{min-width:0;overflow-wrap:anywhere;display:flex;flex-direction:column;gap:2px}
+.hitem .hx b{font-weight:600}
+.hitem .hx .hd{color:var(--muted);font-size:.9rem;line-height:1.35}
 .person .linklike{display:block;background:none;border:0;padding:0;font:inherit;text-align:left;color:inherit;cursor:pointer;min-width:0}
 .confirm{border:1.5px solid var(--fg);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;background:var(--paper)}
 .confirm p{margin:0;font-weight:600}

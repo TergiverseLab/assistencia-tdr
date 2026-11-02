@@ -3,7 +3,8 @@
 
 const COL = {negre:"#111111", gris:"#6b6b6b", gris2:"#9a9a9a", linia:"#dcdcdc", suau:"#f3f3f3", marca:"#e4e4e4", blanc:"#ffffff"};
 const FONT_TITOL = "Josefin Sans";
-const ORDRE_VISTES = ["Inici", "Participants", "Assistència T1", "Assistència T2", "Assistència T3", "Quotes T2", "Quotes T3"];
+const VISTES_OBSOLETES = ["Assistència T1"];   // pestañas de versiones anteriores que se borran solas
+const ORDRE_VISTES = ["Inici", "Participants", "Assistència T1 matí", "Assistència T1 tarda", "Assistència T2", "Assistència T3", "Quotes T2", "Quotes T3"];
 
 function vista(nom){
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -94,10 +95,11 @@ function vistaParticipants(m, sts){
 
 // ---------- Assistència Tn ----------
 function vistaAssistencia(st, m){
-  const sh = vista("Assistència " + st.t.id);
+  const nomGrup = st.grup ? " " + st.grup : "";
+  const sh = vista("Assistència " + st.t.id + nomGrup);
   const g = graellaAssistencia(st, m); const n = g.cap2.length;
   const mitj = st.mitjana==null ? "" : ` · mitjana ${num1(st.mitjana)} per sessió`;
-  titol(sh, `Assistència · ${st.t.id} (${st.t.periode})`, `${st.ses.length} sessions · ${st.gent.size} participants${mitj}`);
+  titol(sh, `Assistència · ${st.t.id}${st.grup ? " · grup de " + (st.grup==="matí" ? "matí" : "tarda") : ""} (${st.t.periode})`, `${st.ses.length} sessions · ${st.gent.size} participants${mitj}`);
   sh.getRange(3,1).setValue("✓ ha vingut   ·  inscrita aquell mes (sessió sense llista)   columna grisa: sessió sense dades").setFontSize(9).setFontColor(COL.gris);
   if (!g.ses.length){ sh.getRange(5,1).setValue("Encara no hi ha sessions en aquesta temporada."); return sh; }
   const f = 5;
@@ -164,7 +166,9 @@ function actualitzarVistes(){
   const sts = TEMPORADES.filter(t=>t.ini <= avui).map(t=>estadistiques(t, m));
   vistaInici(m, sts);
   vistaParticipants(m, sts);
-  sts.forEach(st=>vistaAssistencia(st, m));
+  sts.forEach(st=>{ if (st.t.id === "T1") ["matí","tarda"].forEach(g=>vistaAssistencia(estadistiquesGrup(st, g), m)); else vistaAssistencia(st, m); });
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  VISTES_OBSOLETES.forEach(n=>{ const sh = ss.getSheetByName(n); if (sh) ss.deleteSheet(sh); });
   sts.filter(st=>st.t.id!=="T1").forEach(st=>vistaQuotes(st, m));
   ordenarPestanyes();
   PropertiesService.getScriptProperties().deleteProperty("vistesPendents");
@@ -186,6 +190,7 @@ function onOpen(){
 // 3) Monta las pestañas para mirar.  4) Pone el reloj de cada 10 minutos.
 function instalar(){
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  VISTES_OBSOLETES.forEach(n=>{ const sh = ss.getSheetByName(n); if (sh && ss.getSheets().length > 1) ss.deleteSheet(sh); });
   const propies = ORDRE_VISTES.concat(Object.keys(SHEETS).map(k=>SHEETS[k][0]), Object.keys(SHEETS).map(k=>SHEETS[k][2]));
   Object.keys(SHEETS).forEach(k=>sheet(k)); // renombra las de datos si tenían el nombre antiguo
   const noms = ss.getSheets().map(sh=>sh.getName()).filter(n=>!propies.includes(n));
@@ -212,5 +217,27 @@ function instalar(){
   actualitzarVistes();
   ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==="actualitzarSiCal").forEach(t=>ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger("actualitzarSiCal").timeBased().everyMinutes(10).create();
-  Logger.log("Fet: vistes muntades i rellotge de 10 minuts activat.");
+  ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==="copiesDeSeguretat").forEach(t=>ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger("copiesDeSeguretat").timeBased().everyDays(1).atHour(3).create();
+  copiesDeSeguretat(true);
+  Logger.log("Fet: vistes muntades, rellotge de 10 minuts i còpies de seguretat activats.");
+}
+
+// ===================== CÒPIES DE SEGURETAT =====================
+// Cada día a las 3 h: si es lunes, copia semanal (se guardan 8); si es día 1, copia mensual (se guardan 12).
+// Van a la carpeta "Còpies de seguretat", dentro de la carpeta donde está esta hoja.
+const COPIES_SETMANALS = 8, COPIES_MENSUALS = 12;
+function copiesDeSeguretat(forcar){
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ara = new Date(); const dia = Number(Utilities.formatDate(ara, "Europe/Madrid", "u")); const dm = Number(Utilities.formatDate(ara, "Europe/Madrid", "d"));
+  const pare = DriveApp.getFileById(ss.getId()).getParents().next();
+  const it = pare.getFoldersByName("Còpies de seguretat"); const carpeta = it.hasNext() ? it.next() : pare.createFolder("Còpies de seguretat");
+  const fer = (prefix, data, max)=>{
+    const nom = prefix + " · " + data;
+    if (!carpeta.getFilesByName(nom).hasNext()) DriveApp.getFileById(ss.getId()).makeCopy(nom, carpeta);
+    const totes = []; const f = carpeta.getFiles(); while (f.hasNext()){ const x = f.next(); if (x.getName().indexOf(prefix + " · ") === 0) totes.push(x); }
+    totes.sort((a,b)=>b.getName().localeCompare(a.getName())).slice(max).forEach(x=>x.setTrashed(true));
+  };
+  if (forcar === true || dia === 1) fer("TdR · còpia setmanal", Utilities.formatDate(ara, "Europe/Madrid", "yyyy-MM-dd"), COPIES_SETMANALS);
+  if (forcar === true || dm === 1)  fer("TdR · còpia mensual",  Utilities.formatDate(ara, "Europe/Madrid", "yyyy-MM"), COPIES_MENSUALS);
 }

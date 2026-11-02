@@ -117,3 +117,12 @@ function taulaParticipants(m, sts){
   llista.sort((a,b)=> (a[1]===b[1] ? 0 : a[1]==="activa" ? -1 : 1) || String(a[0]).localeCompare(String(b[0]),"ca"));
   return {cap: ["Participant", "Estat", "Des de", "Fins", ...sts.map(st=>st.t.id), "Sessions amb llista", "Mesos pagats", "Total pagat", "Sòcia"], files: llista};
 }
+
+// T1 por grupo: misma temporada, solo las sesiones de ese grupo (y las que no tienen grupo) y quien vino a ellas
+function estadistiquesGrup(st, grup){
+  const ses = st.ses.filter(s=>s.grup===grup || !s.grup);
+  const gent = new Set(); ses.forEach(s=>s.present.forEach(p=>gent.add(p)));
+  const llista = ses.filter(s=>s.font==="llista");
+  const mitjana = llista.length ? llista.reduce((a,s)=>a+s.present.length+s.altres.length,0)/llista.length : null;
+  return Object.assign({}, st, {ses, gent, llista, inscr:[], mitjana, grup, hores: ses.length*HORES_SESSIO});
+}

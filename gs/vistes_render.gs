@@ -192,7 +192,8 @@ function instalar(){
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   VISTES_OBSOLETES.forEach(n=>{ const sh = ss.getSheetByName(n); if (sh && ss.getSheets().length > 1) ss.deleteSheet(sh); });
   const propies = ORDRE_VISTES.concat(Object.keys(SHEETS).map(k=>SHEETS[k][0]), Object.keys(SHEETS).map(k=>SHEETS[k][2]));
-  Object.keys(SHEETS).forEach(k=>sheet(k)); // renombra las de datos si tenían el nombre antiguo
+  Object.keys(SHEETS).forEach(k=>sheet(k)); // renombra las de datos si tenían el nombre antiguo y crea el Registre
+  { const sh = sheet("sessions"); sh.getRange(1, 1, sh.getMaxRows(), 1).setNumberFormat("@"); }
   const noms = ss.getSheets().map(sh=>sh.getName()).filter(n=>!propies.includes(n));
   if (noms.length){
     const nomArxiu = "Arxiu · pestanyes originals (Excel d'Emi) · Assistència i quotes TdR";

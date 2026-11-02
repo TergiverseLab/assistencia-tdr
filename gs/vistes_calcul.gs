@@ -23,7 +23,6 @@ function dm(d){ return d.slice(8,10) + "/" + d.slice(5,7); }
 function dmy(d){ return d ? d.slice(8,10) + "/" + d.slice(5,7) + "/" + d.slice(0,4) : ""; }
 function nomMes(m){ return m ? MESOS[Number(m.slice(5,7))-1] + " " + m.slice(0,4) : ""; }
 function diaSetmana(d){ const x = new Date(Date.UTC(+d.slice(0,4), +d.slice(5,7)-1, +d.slice(8,10))); return DIES[x.getUTCDay() || 7]; }
-function llistaIds(v){ return String(v==null?"":v).split(",").map(s=>s.trim()).filter(Boolean); }
 function num1(x){ return Math.round(x*10)/10; }
 
 // filas crudas de las pestañas de datos -> modelo limpio
@@ -46,6 +45,18 @@ function construirModel(rowsP, rowsS, rowsG, avui){
 
 function nomDe(m, pid){ return (m.persons[pid] || {nom:pid}).nom; }
 
+// asistencia de cada sesión: lista real = recuento; reconstruida por cuotas = inscritas − 1,5;
+// sin ningún dato = la de la sesión con datos más cercana del mismo conjunto (criterio de Mario, 2/11/2026: ninguna sesión a 0)
+function assistencies(ses){
+  const dir = s => { const n = s.present.length + s.altres.length; if (!n) return null; return s.font==="llista" ? n : Math.max(0, n-FALTES_ESTIMADES); };
+  const t = s => Date.UTC(+s.date.slice(0,4), +s.date.slice(5,7)-1, +s.date.slice(8,10));
+  const res = new Map();
+  ses.forEach(s=>{ let v = dir(s);
+    if (v == null){ let bd = Infinity; ses.forEach(o=>{ if (o===s) return; const w = dir(o); if (w==null) return; const dd = Math.abs(t(o)-t(s)); if (dd < bd){ bd = dd; v = w; } }); }
+    res.set(s, v); });
+  return res;
+}
+
 // cifras de una temporada
 function estadistiques(t, m){
   const ses = m.sessions.filter(s=>s.date>=t.ini && s.date<=t.fi);
@@ -58,11 +69,11 @@ function estadistiques(t, m){
   const mitjMesurada = llista.length ? llista.reduce((a,s)=>a+assist(s),0)/llista.length : null;
   const mitjEstimada = inscr.length ? inscr.reduce((a,s)=>a+Math.max(0,assist(s)-FALTES_ESTIMADES),0)/inscr.length : null;
   // media global: real donde hay lista, estimada donde no
-  const parts = []; llista.forEach(s=>parts.push(assist(s))); inscr.forEach(s=>parts.push(Math.max(0,assist(s)-FALTES_ESTIMADES)));
+  const as = assistencies(ses); const parts = ses.map(s=>as.get(s)).filter(v=>v!=null);
   const mitjana = parts.length ? parts.reduce((a,b)=>a+b,0)/parts.length : null;
   const tipus = !parts.length ? "" : !inscr.length ? "mesurada" : !llista.length ? "estimada" : "mesurada i estimada";
   const ins = Object.values(perMes);
-  return {t, ses, pag, gent, perMes, llista, inscr, mitjMesurada, mitjEstimada, mitjana, tipus,
+  return {t, ses, pag, gent, perMes, llista, inscr, mitjMesurada, mitjEstimada, mitjana, tipus, as,
           hores: ses.length*HORES_SESSIO, insMin: ins.length?Math.min(...ins):null, insMax: ins.length?Math.max(...ins):null};
 }
 
@@ -84,7 +95,8 @@ function graellaAssistencia(st, m){
     const cel = ses.map(s=> s.present.includes(pid) ? (s.font==="llista" ? "✓" : "·") : "");
     return [nomDe(m,pid), ...cel, cel.filter(c=>c==="✓").length || ""];
   });
-  const totals = ["Assistents", ...ses.map(s=> s.font==="llista" ? s.present.length+s.altres.length : s.font==="inscrites" ? Math.round(Math.max(0,s.present.length+s.altres.length-FALTES_ESTIMADES)) : ""), ""];
+  const as = st.as || assistencies(st.ses);
+  const totals = ["Assistents", ...ses.map(s=> as.get(s)==null ? "" : Math.round(as.get(s))), ""];
   const provar = ses.some(s=>s.altres.length) ? ["Venen a provar", ...ses.map(s=>s.altres.length||""), ""] : null;
   return {ses, files, totals, provar,
           cap1: ["", ...ses.map(s=> diaSetmana(s.date) + (s.grup ? " · "+s.grup : "")), ""],
@@ -123,6 +135,7 @@ function estadistiquesGrup(st, grup){
   const ses = st.ses.filter(s=>s.grup===grup || !s.grup);
   const gent = new Set(); ses.forEach(s=>s.present.forEach(p=>gent.add(p)));
   const llista = ses.filter(s=>s.font==="llista");
-  const mitjana = llista.length ? llista.reduce((a,s)=>a+s.present.length+s.altres.length,0)/llista.length : null;
-  return Object.assign({}, st, {ses, gent, llista, inscr:[], mitjana, grup, hores: ses.length*HORES_SESSIO});
+  const as = assistencies(ses); const parts = ses.map(s=>as.get(s)).filter(v=>v!=null);
+  const mitjana = parts.length ? parts.reduce((a,b)=>a+b,0)/parts.length : null;
+  return Object.assign({}, st, {ses, gent, llista, inscr:[], mitjana, as, grup, hores: ses.length*HORES_SESSIO});
 }

@@ -1,0 +1,127 @@
+<div class="wrap">
+  <header>
+    <div class="logo-tdr" role="img" aria-label="Teatre dels Records"></div>
+    <div>
+      <h1>Assistència i quotes</h1>
+      <p class="sub"><span id="h-season">Temporada</span> · <span>Malgrat de Mar</span></p>
+    </div>
+  </header>
+  <div class="lf"><span>Un projecte de l'Associació Laboratori Línia de Fuga</span><div class="logo-lf" role="img" aria-label="Línia de Fuga"></div></div>
+
+  <div class="banner" id="banner" hidden></div>
+
+  <!-- PASAR LISTA -->
+  <section id="view-lista" class="view">
+    <div class="card">
+      <div class="monthnav">
+        <button class="btn ghost" id="l-prevw" type="button" aria-label="Sesión anterior">‹</button>
+        <div class="monthpick"><div class="monthname" id="l-dayname"></div><input type="date" id="l-date" aria-label="Fecha de la sesión"></div>
+        <button class="btn ghost" id="l-nextw" type="button" aria-label="Sesión siguiente">›</button>
+      </div>
+      <div class="row nowrap" id="l-grouprow" hidden><label class="field" style="flex:1">Grupo <select id="l-group"></select></label></div>
+      <p class="saved" id="l-saved" aria-live="polite"></p>
+      <div class="row" id="l-lockrow" hidden><button class="btn ghost small" id="l-lock" type="button">Desbloquear para corregir</button><span class="note" id="l-info"></span></div>
+      <div class="row nowrap"><h2>Quién ha venido</h2><span class="spacer"></span><span class="count" id="l-count">0</span></div>
+      <button class="btn ghost small" id="l-all" type="button" style="align-self:flex-start">Marcar todas</button>
+      <button class="quotabar" id="l-quota" type="button" hidden></button>
+      <div class="roster" id="l-roster"></div>
+      <label class="field">Vienen a probar (nombres, separados por comas) <input type="text" id="l-others" placeholder="p. ej. Yolanda" autocomplete="off"></label>
+      <p class="note">Solo para quien viene a probar y aún no está apuntada. Si se apunta, dale de alta en Personas y a partir de entonces sale en la lista.</p>
+      <div class="row"><button class="btn ghost small" id="l-clear" type="button">Limpiar</button><span class="status" id="l-status" aria-live="polite"></span></div>
+    </div>
+  </section>
+
+  <!-- PAGOS -->
+  <section id="view-pagos" class="view" hidden>
+    <div class="card">
+      <div class="monthnav">
+        <button class="btn ghost" id="p-prev" type="button" aria-label="Mes anterior">‹</button>
+        <div class="monthpick"><div class="monthname"><span id="p-month"></span><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></div><input type="month" id="p-pick" aria-label="Elegir mes"></div>
+        <button class="btn ghost" id="p-next" type="button" aria-label="Mes siguiente">›</button>
+      </div>
+      <div id="p-defaultwrap"><label class="field">Cuota del mes <input type="number" id="p-default" inputmode="decimal" min="0" step="1" value="45"></label>
+      <p class="note">Toca el círculo de quien haya pagado. El importe ya viene puesto; cámbialo solo en casos especiales (media mensualidad, descuento). Después, Guardar.</p></div>
+      <p class="saved" id="p-saved" aria-live="polite"></p>
+      <div class="row" id="p-lockrow" hidden><button class="btn ghost small" id="p-lock" type="button">Cerrar mes</button><span class="note" id="p-lockmsg"></span></div>
+      <div id="p-list"></div>
+      <div class="row"><span class="status" id="p-status" aria-live="polite"></span><span class="spacer"></span><span class="count" id="p-total">0 €</span></div>
+    </div>
+  </section>
+
+  <!-- HISTORIAL -->
+  <section id="view-hist" class="view" hidden>
+    <div class="card">
+      <h2>Historial</h2>
+      <p class="note">Todo lo que se ha guardado, desde cualquier móvil, con fecha y hora. Toca una línea para ir a esa sesión o a ese mes.</p>
+      <p class="empty" id="h-empty" hidden>Todavía no hay cambios registrados. A partir de ahora, cada vez que se guarde algo aparecerá aquí.</p>
+      <div id="h-list" class="hlist"></div>
+    </div>
+  </section>
+
+  <!-- PERSONAS -->
+  <section id="view-pers" class="view" hidden>
+    <div class="card">
+      <h2>Alta nueva</h2>
+      <div class="row"><input type="text" id="n-name" placeholder="Nombre y apellido" autocomplete="off" style="flex:1"><button class="btn" id="n-add" type="button">Añadir</button></div>
+      <span class="status" id="n-status" aria-live="polite"></span>
+      <p class="note">La persona aparece en la lista desde el mes actual. Para una baja, toca "Baja": deja de salir en la lista pero conserva su historial. Toca un nombre para ver su ficha.</p>
+    </div>
+    <div class="card">
+      <div class="row nowrap"><h2>Personas</h2><span class="spacer"></span><span class="note" id="n-count"></span></div>
+      <div class="row ctx">
+        <label class="field" style="flex:1;min-width:150px">Temporada <select id="f-season-per" data-ctx="season"></select></label>
+        <label class="field" style="flex:1;min-width:120px" data-ctx-groupwrap hidden>Grupo <select id="f-group-per" data-ctx="group"></select></label>
+      </div>
+      <p class="note" id="n-socias"></p>
+      <div id="n-list"></div>
+    </div>
+  </section>
+
+  <!-- RESUMEN -->
+  <section id="view-res" class="view" hidden>
+    <div class="card">
+      <div class="row ctx">
+        <label class="field" style="flex:1;min-width:150px">Temporada <select id="f-season-res" data-ctx="season"></select></label>
+        <label class="field" style="flex:1;min-width:120px" data-ctx-groupwrap hidden>Grupo <select id="f-group-res" data-ctx="group"></select></label>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Asistencia</h2>
+      <p class="empty" id="r-noses">Todavía no se ha pasado lista ninguna vez. Las sesiones aparecerán aquí a partir de la primera que guardes.</p>
+      <div class="tiles" id="r-tiles">
+        <div class="tile"><b id="r-sess">0</b><span>sesiones</span></div>
+        <div class="tile"><b id="r-new">0</b><span>participantes</span></div>
+        <div class="tile"><b id="r-avg">0</b><span>media por sesión</span></div>
+      </div>
+      <p class="note" id="r-socias"></p>
+      <div class="chart" id="r-chart-ses"></div>
+      <p class="note" id="r-probes" hidden></p>
+      <p class="note" id="r-nolista" hidden>La asistencia por persona se ve a partir de las sesiones con lista (T1 y desde el 4/11/2026).</p>
+      <p class="note" id="r-tablenote"></p>
+      <div class="scroll tall" id="r-wrap"><table id="r-table"><thead><tr><th>Persona</th><th class="n">Sesiones</th></tr></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card">
+      <h2>Cuotas por mes</h2>
+      <div class="chart" id="r-chart-pag"></div>
+      <div class="scroll"><table id="r-pagos"><thead><tr><th>Mes</th><th class="n">Personas</th><th class="n">Total</th></tr></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card">
+      <h2>Exportar</h2>
+      <p class="note">La hoja «Assistència i quotes TdR» con todas sus pestañas (Inici, Participants, Assistència, Quotes). Hace falta tener acceso a ella con tu cuenta de Google.</p>
+      <div class="row"><a class="btn" id="r-xlsx" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none">Descargar Excel</a><a class="btn ghost" id="r-open" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none">Abrir la hoja</a></div>
+    </div>
+  </section>
+
+  <footer><span class="note" id="ver"></span></footer>
+  <div class="endspace" aria-hidden="true"></div>
+</div>
+
+<div class="savebar" id="savebar"><button class="btn" id="save">Guardar asistencia</button></div>
+
+<nav class="tabs" role="tablist" aria-label="Secciones"><div class="tabs-in">
+  <button class="tab" role="tab" data-view="lista" aria-selected="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/><path d="M17 16l2 2 3-4"/></svg>Asistencia</button>
+  <button class="tab" role="tab" data-view="pagos" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M14.5 9.5a3 3 0 1 0 0 5M8 11h5M8 13h5"/></svg>Cuotas</button>
+  <button class="tab" role="tab" data-view="pers" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M15 15.5a5 5 0 0 1 6.5 4.5"/></svg>Personas</button>
+  <button class="tab" role="tab" data-view="res" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Resumen</button>
+  <button class="tab" role="tab" data-view="hist" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Historial</button>
+</div></nav>

@@ -7,6 +7,7 @@ function textoPendiente(op){
     if((d.othersAdd||[]).length) det.push("Vienen a probar: "+d.othersAdd.join(", ")); return {titulo:`Asistencia · ${diaDe(fmt(d.date||d.id))}`, det:det.length?det:["Sin cambios en la lista"]}; }
   if(op.action==="pagaments"){ const det=[]; const ks=Object.keys(d.set||{}); if(ks.length) det.push("Cuota pagada: "+ks.map(x=>`${nom(x)} (${d.set[x].amount} €)`).join(", ")); if((d.unset||[]).length) det.push("Pago quitado: "+d.unset.map(nom).join(", "));
     return {titulo:`Cuotas · ${monthName(d.month)}`, det:det.length?det:["Sin cambios"]}; }
+  if(op.action==="deleteSession") return {titulo:"Asistencia", det:["Borrar la sesión "+fmt(String(d.id).slice(0,10))]};
   if(op.action==="mes") return {titulo:`Cuotas · ${monthName(d.month)}`, det:[d.tancat?"Cerrar el mes":"Reabrir el mes"]};
   if(op.action==="persona"){ const st=d.set||{}, det=[]; if(st.active===false) det.push("Dar de baja"); if(st.active===true) det.push("Alta / vuelve a estar activa"); if(st.name) det.push("Nombre: "+st.name); if(st.socia) det.push("Socia de la asociación (cambio)"); return {titulo:`Personas · ${nom(d.id)}`, det:det.length?det:["Cambios en la ficha"]}; }
   return op.action;

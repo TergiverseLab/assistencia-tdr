@@ -244,7 +244,7 @@ details.rses[open] summary{margin-bottom:6px}
       <div class="roster" id="l-roster"></div>
       <label class="field">Vienen a probar (nombres, separados por comas) <input type="text" id="l-others" placeholder="p. ej. Yolanda" autocomplete="off"></label>
       <p class="note">Solo para quien viene a probar y aún no está apuntada. Si se apunta, dale de alta en Personas y a partir de entonces sale en la lista.</p>
-      <div class="row"><button class="btn ghost small" id="l-clear" type="button">Limpiar</button><span class="status" id="l-status" aria-live="polite"></span></div>
+      <div class="row" id="l-acciones"><button class="btn ghost small" id="l-clear" type="button">Limpiar</button><button class="btn ghost small" id="l-borrar" type="button" hidden>Borrar esta sesión</button><span class="status" id="l-status" aria-live="polite"></span></div>
     </div>
   </section>
 
@@ -382,6 +382,8 @@ function aplicarOp(data, op){
     const m = data.pagos[d.month] || (data.pagos[d.month] = {month:d.month, rows:{}});
     (d.unset||[]).forEach(pid=>{ delete m.rows[pid]; });
     Object.keys(d.set||{}).forEach(pid=>{ const a = m.rows[pid]; m.rows[pid] = {amount:Number(d.set[pid].amount)||0, date:(a&&a.date)||d.set[pid].date||"", savedAt:(a&&a.savedAt)||""}; });
+  } else if (op.action === "deleteSession"){
+    delete data.sessions[d.id];
   } else if (op.action === "mes"){
     data.settings = data.settings || {}; data.settings["tancat:"+d.month] = !!d.tancat;
   } else if (op.action === "persona"){
@@ -498,7 +500,7 @@ async function pickStore(){
 
 (function(){
 // ===== 1. BASE: utilidades, temporadas, navegación, botón Guardar =====
-const APP_VERSION = "02/11 23:56";
+const APP_VERSION = "02/11 23:59";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;          // cuota mensual habitual (septiembre fue 25)
 const $ = id => document.getElementById(id);
@@ -707,6 +709,7 @@ function applySesLock(){
   $("l-lockrow").hidden=!past; $("l-lock").textContent = locked ? "Desbloquear para corregir" : "Volver a cerrar";
   $("l-info").textContent = past ? (locked ? "Sesión pasada: cerrada para no tocarla sin querer." : "Abierta para corregir: al guardar se cierra sola.") : "";
   $("l-roster").querySelectorAll("input").forEach(c=>c.disabled=locked); $("l-others").disabled=locked; $("l-all").disabled=locked; $("l-clear").disabled=locked;
+  $("l-borrar").hidden = !has || locked;   // borrar: solo una sesión guardada y abierta (las pasadas, tras desbloquear)
   if(vistaActual==="lista") botonGuardar();
 }
 $("l-lock").addEventListener("click",()=>{
@@ -756,6 +759,18 @@ async function saveSession(){
     applySesLock(); }
   updPendientes();
 }
+
+// Borrar una sesión entera (p. ej. una de prueba). Pide confirmación y queda en el Historial.
+$("l-borrar").addEventListener("click",()=>{
+  const sid=curSessionId; if(!sid||!data.sessions[sid]) return; const d=data.sessions[sid].date||sid;
+  confirmar($("l-acciones"), `¿Borrar la sesión del ${DIAS[new Date(d+"T12:00:00").getDay()]} ${fmt(d)}? Desaparece de la lista y de las estadísticas.`, "Sí, borrarla", async()=>{
+    const op={action:"deleteSession", key:"d:"+sid, data:{id:sid}}; aplicarOp(data,op); abiertos.delete("s:"+sid); clearDraft();
+    curSessionId=null; setDate(d); setStatus("l-status","Sesión borrada.","ok");
+    try{ const res=await store.send(op); if(res.encola) setStatus("l-status","Sesión borrada. "+textoEspera(),"ok"); }
+    catch(e){ setStatus("l-status","La hoja ha rechazado el borrado: "+e.message,"err"); refresh(); }
+    updPendientes();
+  });
+});
 
 // ===== 3. PAGOS =====
 // Igual que en Lista: se guarda SOLO lo que ha cambiado respecto a lo que se cargó (quién se marca, quién se
@@ -1104,6 +1119,7 @@ function textoPendiente(op){
     if((d.othersAdd||[]).length) det.push("Vienen a probar: "+d.othersAdd.join(", ")); return {titulo:`Asistencia · ${diaDe(fmt(d.date||d.id))}`, det:det.length?det:["Sin cambios en la lista"]}; }
   if(op.action==="pagaments"){ const det=[]; const ks=Object.keys(d.set||{}); if(ks.length) det.push("Cuota pagada: "+ks.map(x=>`${nom(x)} (${d.set[x].amount} €)`).join(", ")); if((d.unset||[]).length) det.push("Pago quitado: "+d.unset.map(nom).join(", "));
     return {titulo:`Cuotas · ${monthName(d.month)}`, det:det.length?det:["Sin cambios"]}; }
+  if(op.action==="deleteSession") return {titulo:"Asistencia", det:["Borrar la sesión "+fmt(String(d.id).slice(0,10))]};
   if(op.action==="mes") return {titulo:`Cuotas · ${monthName(d.month)}`, det:[d.tancat?"Cerrar el mes":"Reabrir el mes"]};
   if(op.action==="persona"){ const st=d.set||{}, det=[]; if(st.active===false) det.push("Dar de baja"); if(st.active===true) det.push("Alta / vuelve a estar activa"); if(st.name) det.push("Nombre: "+st.name); if(st.socia) det.push("Socia de la asociación (cambio)"); return {titulo:`Personas · ${nom(d.id)}`, det:det.length?det:["Cambios en la ficha"]}; }
   return op.action;
@@ -1164,6 +1180,7 @@ function explicarRegistro(r){
   }
   if((m=t.match(/^Mes (cerrado|reabierto): (.+)$/))) return {titulo:`Cuotas · ${m[2]}`, det:[m[1]==="cerrado"?"Mes cerrado: ya no se pueden tocar sus cuotas sin desbloquear":"Mes reabierto para corregir"]};
   if((m=t.match(/^Ficha de (.+?): (.*)$/))) return {titulo:`Datos personales · ${m[1]}`, det:[m[2]==="sin cambios"?"Guardados sin cambios":`Actualizado: ${m[2]}`]};
+  if((m=t.match(/^Sesión borrada: (\d{4}-\d\d-\d\d)(-\w+)?$/))) return {titulo:`Asistencia · ${diaDe(fmt(m[1]))}`, det:["Sesión borrada"]};
   if((m=t.match(/^Sesión borrada: (.+)$/))) return {titulo:"Asistencia", det:[`Sesión borrada: ${m[1]}`]};
   // personas: puede haber varios cambios separados por " · "
   const partes=t.split(" · "), det=[]; let quien="";

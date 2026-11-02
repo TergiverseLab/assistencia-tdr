@@ -94,6 +94,7 @@ function applySesLock(){
   $("l-lockrow").hidden=!past; $("l-lock").textContent = locked ? "Desbloquear para corregir" : "Volver a cerrar";
   $("l-info").textContent = past ? (locked ? "Sesión pasada: cerrada para no tocarla sin querer." : "Abierta para corregir: al guardar se cierra sola.") : "";
   $("l-roster").querySelectorAll("input").forEach(c=>c.disabled=locked); $("l-others").disabled=locked; $("l-all").disabled=locked; $("l-clear").disabled=locked;
+  $("l-borrar").hidden = !has || locked;   // borrar: solo una sesión guardada y abierta (las pasadas, tras desbloquear)
   if(vistaActual==="lista") botonGuardar();
 }
 $("l-lock").addEventListener("click",()=>{
@@ -143,3 +144,15 @@ async function saveSession(){
     applySesLock(); }
   updPendientes();
 }
+
+// Borrar una sesión entera (p. ej. una de prueba). Pide confirmación y queda en el Historial.
+$("l-borrar").addEventListener("click",()=>{
+  const sid=curSessionId; if(!sid||!data.sessions[sid]) return; const d=data.sessions[sid].date||sid;
+  confirmar($("l-acciones"), `¿Borrar la sesión del ${DIAS[new Date(d+"T12:00:00").getDay()]} ${fmt(d)}? Desaparece de la lista y de las estadísticas.`, "Sí, borrarla", async()=>{
+    const op={action:"deleteSession", key:"d:"+sid, data:{id:sid}}; aplicarOp(data,op); abiertos.delete("s:"+sid); clearDraft();
+    curSessionId=null; setDate(d); setStatus("l-status","Sesión borrada.","ok");
+    try{ const res=await store.send(op); if(res.encola) setStatus("l-status","Sesión borrada. "+textoEspera(),"ok"); }
+    catch(e){ setStatus("l-status","La hoja ha rechazado el borrado: "+e.message,"err"); refresh(); }
+    updPendientes();
+  });
+});

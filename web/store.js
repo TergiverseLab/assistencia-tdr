@@ -33,6 +33,8 @@ function aplicarOp(data, op){
     const m = data.pagos[d.month] || (data.pagos[d.month] = {month:d.month, rows:{}});
     (d.unset||[]).forEach(pid=>{ delete m.rows[pid]; });
     Object.keys(d.set||{}).forEach(pid=>{ const a = m.rows[pid]; m.rows[pid] = {amount:Number(d.set[pid].amount)||0, date:(a&&a.date)||d.set[pid].date||"", savedAt:(a&&a.savedAt)||""}; });
+  } else if (op.action === "deleteSession"){
+    delete data.sessions[d.id];
   } else if (op.action === "mes"){
     data.settings = data.settings || {}; data.settings["tancat:"+d.month] = !!d.tancat;
   } else if (op.action === "persona"){

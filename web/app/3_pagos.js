@@ -27,7 +27,7 @@ $("p-lock").addEventListener("click",()=>{
     falta.forEach(r=>r.classList.add("falta"));
     const texto = `¿Cerrar ${monthName(m)}?`;   // quien falta por pagar ya se ve en rojo en la lista
     confirmar($("p-lockrow"), texto, "Sí, cerrar", ()=>marcarMes(m,true), false, ()=>falta.forEach(r=>r.classList.remove("falta"))); return; }
-  confirmar($("p-lockrow"), `¿Corregir las cuotas de ${monthName(m)}?`, "Sí, corregir", ()=>{ abiertos.add(k); renderPagos(); setStatus("p-status",""); });
+  confirmar($("p-lockrow"), `${monthName(m)[0].toUpperCase()+monthName(m).slice(1)} ya está cerrado. ¿Seguro que quieres corregirlo?`, "Sí, corregir", ()=>{ abiertos.add(k); renderPagos(); setStatus("p-status",""); });
 });
 async function marcarMes(m,tancat){
   const op={action:"mes", key:"c:"+m, data:{month:m, tancat}}; aplicarOp(data,op); abiertos.delete("m:"+m); renderPagos();

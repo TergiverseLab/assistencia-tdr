@@ -529,7 +529,7 @@ async function pickStore(){
 
 (function(){
 // ===== 1. BASE: utilidades, temporadas, navegación, botón Guardar =====
-const APP_VERSION = "03/11 00:40:51";
+const APP_VERSION = "03/11 00:48:08";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;          // cuota mensual habitual (septiembre fue 25)
 const $ = id => document.getElementById(id);
@@ -850,7 +850,7 @@ $("p-lock").addEventListener("click",()=>{
     falta.forEach(r=>r.classList.add("falta"));
     const texto = `¿Cerrar ${monthName(m)}?`;   // quien falta por pagar ya se ve en rojo en la lista
     confirmar($("p-lockrow"), texto, "Sí, cerrar", ()=>marcarMes(m,true), false, ()=>falta.forEach(r=>r.classList.remove("falta"))); return; }
-  confirmar($("p-lockrow"), `¿Corregir las cuotas de ${monthName(m)}?`, "Sí, corregir", ()=>{ abiertos.add(k); renderPagos(); setStatus("p-status",""); });
+  confirmar($("p-lockrow"), `${monthName(m)[0].toUpperCase()+monthName(m).slice(1)} ya está cerrado. ¿Seguro que quieres corregirlo?`, "Sí, corregir", ()=>{ abiertos.add(k); renderPagos(); setStatus("p-status",""); });
 });
 async function marcarMes(m,tancat){
   const op={action:"mes", key:"c:"+m, data:{month:m, tancat}}; aplicarOp(data,op); abiertos.delete("m:"+m); renderPagos();

@@ -2,8 +2,8 @@
 // Arriba: estado, socia y baja. En medio: datos personales (DNI, nacimiento, teléfono, email, dirección).
 // Abajo: su historial (temporadas, sesiones, cuotas).
 // Los datos personales NO van con el resto: el puente solo los da con la contraseña de las fichas (la eligen Mario y
-// Emi: la primera que se escribe se queda). Ni la contraseña ni los datos se guardan en el móvil: al cerrar la web
-// se vuelve a pedir.
+// Emi: la primera que se escribe se queda). Se pide CADA VEZ que se abren los datos de una persona; ni la contraseña
+// ni los datos se guardan en el móvil.
 const CAMPOS_FICHA=[["dni","DNI","text"],["naixement","Fecha de nacimiento","date"],["telefon","Teléfono","tel"],["email","Email","email"],["adreca","Dirección","text"]];
 let fitxes=null, fitxesError="", fitxesAviso="";   // null = sin cargar
 let clauMem="";                                     // solo en memoria
@@ -19,6 +19,7 @@ async function cargarFitxes(){
   catch(e){ fitxes=null; fitxesError=textoError(e); if(/incorrecta|corta/.test(e.message)) clauMem=""; }
 }
 function toggleFicha(pid,row){
+  clauMem=""; fitxes=null; fitxesError=""; fitxesAviso="";  // plegar o cambiar de ficha también la olvida
   const next=row.nextElementSibling; if(next&&next.classList.contains("ficha")){ next.remove(); return; }
   document.querySelectorAll("#n-list .ficha").forEach(f=>f.remove());
   const f=document.createElement("div"); f.className="ficha"; f.dataset.pid=pid; row.after(f); pintarFicha(f);
@@ -62,7 +63,8 @@ function pintarFicha(f){
   const tras=async()=>{ renderPersons(); renderRoster(); const fila=document.querySelector(`[data-ficha="${CSS.escape(pid)}"]`); if(fila) toggleFicha(pid,fila.closest(".person")); };
   if(q(".f-baja")) q(".f-baja").addEventListener("click",async e=>{ e.target.disabled=true; await guardarPersona(pid, off?{active:true,to:""}:{active:false,to:todayISO().slice(0,7)}, st); tras(); });
   if(q(".f-soc")) q(".f-soc").addEventListener("click",async e=>{ e.target.disabled=true; const socia={...(p.socia||{})}; if(socia[season]) delete socia[season]; else socia[season]={amount:SOCIA_AMOUNT,date:todayISO()}; await guardarPersona(pid,{socia},st); tras(); });
-  const cerrarDatos=(msg)=>{ f.dataset.datos=""; pintarFicha(f); if(msg){ const s2=f.querySelector(".f-status"); s2.textContent=msg; s2.className="status f-status ok"; } };
+  // al cerrar los datos se olvida la contraseña: cada vez que se abren se vuelve a pedir
+  const cerrarDatos=(msg)=>{ f.dataset.datos=""; clauMem=""; fitxes=null; fitxesError=""; fitxesAviso=""; pintarFicha(f); if(msg){ const s2=f.querySelector(".f-status"); s2.textContent=msg; s2.className="status f-status ok"; } };
   if(q(".f-abrir")) q(".f-abrir").addEventListener("click",async()=>{ f.dataset.datos="1"; pintarFicha(f); if(fitxes===null && clauFichas()){ await cargarFitxes(); if(f.isConnected) pintarFicha(f); } });
   if(q(".f-cerrar")) q(".f-cerrar").addEventListener("click",()=>cerrarDatos(""));
   const entrar=async()=>{ const c=q(".f-clau").value.trim(); if(!c) return; clauMem=c; fitxes=null; fitxesError=""; pintarFicha(f); await cargarFitxes(); if(f.isConnected) pintarFicha(f); };

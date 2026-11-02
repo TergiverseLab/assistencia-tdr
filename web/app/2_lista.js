@@ -27,8 +27,10 @@ function renderRoster(){
   });
   renderQuotaBar(q); updCount();
 }
-// Cuota del mes de la sesión: solo cuando el cobro de ese mes ya ha empezado (hay algún pago apuntado).
-function quotaInfo(){
+// Cuotas en la lista de asistencia: QUITADO (2/11/2026, Mario: no se entiende). La lista solo dice quién ha venido;
+// las cuotas se miran en Cuotas. Se deja la función devolviendo null para no tocar el resto.
+function quotaInfo(){ return null; }
+function quotaInfoAntes(){
   const ym=($("l-date").value||todayISO()).slice(0,7); if(seasonOf(ym)==="T1") return null;
   const pg=data.pagos[ym]; const rows=(pg&&pg.rows)||{}; if(!Object.keys(rows).length) return null;
   return {ym, rows};

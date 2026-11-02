@@ -86,6 +86,7 @@ function lineaGuardada(estado){
   const el=$("l-saved"); const s=curSessionId&&data.sessions[curSessionId];
   if(estado==="cola"){ el.textContent=textoEspera(); el.className="saved warn"; return; }
   if(estado==="busy"){ el.textContent="Guardando…"; el.className="saved"; return; }
+  if(estado==="subiendo"){ el.textContent="Guardada · subiendo a la hoja…"; el.className="saved ok"; return; }
   if(s&&s.savedAt){ el.textContent=`Guardada el ${hora(s.savedAt)}`; el.className="saved ok"; }
   else if(s){ el.textContent=""; el.className="saved"; }
   else { el.textContent="Sesión nueva: todavía no se ha guardado."; el.className="saved"; }
@@ -131,21 +132,22 @@ async function saveSession(){
     othersAdd:others().filter(o=>!(baseSes.others||[]).some(x=>x.toLowerCase()===o.toLowerCase())),
     othersRemove:(baseSes.others||[]).filter(x=>!others().some(o=>o.toLowerCase()===x.toLowerCase()))}};
   const kDraft=draftKey();
-  botonEstado("busy"); lineaGuardada("busy"); setStatus("l-status","");
+  setStatus("l-status","");
+  // 1) Al instante: guardado en el móvil, pantalla cerrada con sus botones. Se puede seguir usando la web.
   aplicarOp(data,op); curSessionId=sid; baseSes={id:sid, present:data.sessions[sid].present.slice(), others:data.sessions[sid].others.slice()}; abiertos.delete("s:"+sid); clearDraft(kDraft);
-  const sigue=()=>curSessionId===sid; // si mientras se guarda se cambia de fecha, no se toca la pantalla nueva
+  const sigue=()=>curSessionId===sid && !abiertos.has("s:"+sid); // otra fecha en pantalla, o corrigiendo otra vez: no se toca la pantalla
+  botonEstado("ok","Asistencia guardada ✓"); renderRoster(); marcar(data.sessions[sid].present, data.sessions[sid].others); applySesLock(); lineaGuardada("subiendo"); updPendientes();
+  // 2) Por detrás: se sube a la hoja (en orden, con lo demás pendiente). La barrita de arriba indica que está subiendo.
   try{
     const res=await store.send(op);
-    if(res.encola){ botonEstado("ok",textoEsperaCorto()); lineaGuardada("cola"); }
+    if(res.encola){ if(sigue()) lineaGuardada("cola"); }
     else {
-      if(res.session){ const antes=ahora.length; data.sessions[sid]=res.session; const extra=res.session.present.length-antes;
-        if(sigue()){ baseSes={id:sid, present:res.session.present.slice(), others:(res.session.others||[]).slice()}; marcar(res.session.present,res.session.others); }
-        if(extra>0 && sigue()) setStatus("l-status",`Se han sumado ${extra} ${extra===1?"persona marcada":"personas marcadas"} desde otro móvil.`,"ok"); }
-      botonEstado("ok","Asistencia guardada ✓"); if(sigue()) lineaGuardada();
+      if(res.session){ data.sessions[sid]=res.session; const extra=res.session.present.length-ahora.length;
+        if(sigue()){ baseSes={id:sid, present:res.session.present.slice(), others:(res.session.others||[]).slice()}; marcar(res.session.present,res.session.others);
+          if(extra>0) setStatus("l-status",`Se han sumado ${extra} ${extra===1?"persona marcada":"personas marcadas"} desde otro móvil.`,"ok"); } }
+      if(sigue()) lineaGuardada();
     }
   }catch(e){ botonEstado("err","No se ha guardado"); setStatus("l-status","La hoja ha rechazado el cambio: "+e.message,"err"); refresh(); }
-  if(sigue()){ renderRoster(); const s=data.sessions[sid]; if(s){ baseSes={id:sid, present:s.present.slice(), others:(s.others||[]).slice()}; marcar(s.present,s.others); } lineaGuardada(store.pending().some(o=>o.key==="s:"+sid)?"cola":undefined);
-    applySesLock(); }
   updPendientes();
 }
 

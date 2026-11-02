@@ -515,7 +515,7 @@ async function pickStore(){
 
 (function(){
 // ===== 1. BASE: utilidades, temporadas, navegación, botón Guardar =====
-const APP_VERSION = "03/11 00:16";
+const APP_VERSION = "03/11 00:26";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;          // cuota mensual habitual (septiembre fue 25)
 const $ = id => document.getElementById(id);
@@ -726,6 +726,7 @@ function lineaGuardada(estado){
   const el=$("l-saved"); const s=curSessionId&&data.sessions[curSessionId];
   if(estado==="cola"){ el.textContent=textoEspera(); el.className="saved warn"; return; }
   if(estado==="busy"){ el.textContent="Guardando…"; el.className="saved"; return; }
+  if(estado==="subiendo"){ el.textContent="Guardada · subiendo a la hoja…"; el.className="saved ok"; return; }
   if(s&&s.savedAt){ el.textContent=`Guardada el ${hora(s.savedAt)}`; el.className="saved ok"; }
   else if(s){ el.textContent=""; el.className="saved"; }
   else { el.textContent="Sesión nueva: todavía no se ha guardado."; el.className="saved"; }
@@ -771,21 +772,22 @@ async function saveSession(){
     othersAdd:others().filter(o=>!(baseSes.others||[]).some(x=>x.toLowerCase()===o.toLowerCase())),
     othersRemove:(baseSes.others||[]).filter(x=>!others().some(o=>o.toLowerCase()===x.toLowerCase()))}};
   const kDraft=draftKey();
-  botonEstado("busy"); lineaGuardada("busy"); setStatus("l-status","");
+  setStatus("l-status","");
+  // 1) Al instante: guardado en el móvil, pantalla cerrada con sus botones. Se puede seguir usando la web.
   aplicarOp(data,op); curSessionId=sid; baseSes={id:sid, present:data.sessions[sid].present.slice(), others:data.sessions[sid].others.slice()}; abiertos.delete("s:"+sid); clearDraft(kDraft);
-  const sigue=()=>curSessionId===sid; // si mientras se guarda se cambia de fecha, no se toca la pantalla nueva
+  const sigue=()=>curSessionId===sid && !abiertos.has("s:"+sid); // otra fecha en pantalla, o corrigiendo otra vez: no se toca la pantalla
+  botonEstado("ok","Asistencia guardada ✓"); renderRoster(); marcar(data.sessions[sid].present, data.sessions[sid].others); applySesLock(); lineaGuardada("subiendo"); updPendientes();
+  // 2) Por detrás: se sube a la hoja (en orden, con lo demás pendiente). La barrita de arriba indica que está subiendo.
   try{
     const res=await store.send(op);
-    if(res.encola){ botonEstado("ok",textoEsperaCorto()); lineaGuardada("cola"); }
+    if(res.encola){ if(sigue()) lineaGuardada("cola"); }
     else {
-      if(res.session){ const antes=ahora.length; data.sessions[sid]=res.session; const extra=res.session.present.length-antes;
-        if(sigue()){ baseSes={id:sid, present:res.session.present.slice(), others:(res.session.others||[]).slice()}; marcar(res.session.present,res.session.others); }
-        if(extra>0 && sigue()) setStatus("l-status",`Se han sumado ${extra} ${extra===1?"persona marcada":"personas marcadas"} desde otro móvil.`,"ok"); }
-      botonEstado("ok","Asistencia guardada ✓"); if(sigue()) lineaGuardada();
+      if(res.session){ data.sessions[sid]=res.session; const extra=res.session.present.length-ahora.length;
+        if(sigue()){ baseSes={id:sid, present:res.session.present.slice(), others:(res.session.others||[]).slice()}; marcar(res.session.present,res.session.others);
+          if(extra>0) setStatus("l-status",`Se han sumado ${extra} ${extra===1?"persona marcada":"personas marcadas"} desde otro móvil.`,"ok"); } }
+      if(sigue()) lineaGuardada();
     }
   }catch(e){ botonEstado("err","No se ha guardado"); setStatus("l-status","La hoja ha rechazado el cambio: "+e.message,"err"); refresh(); }
-  if(sigue()){ renderRoster(); const s=data.sessions[sid]; if(s){ baseSes={id:sid, present:s.present.slice(), others:(s.others||[]).slice()}; marcar(s.present,s.others); } lineaGuardada(store.pending().some(o=>o.key==="s:"+sid)?"cola":undefined);
-    applySesLock(); }
   updPendientes();
 }
 
@@ -894,7 +896,11 @@ function renderPagos(){
 function lineaPagos(estado){
   const el=$("p-saved"); const rows=(data.pagos[curMonth]||{rows:{}}).rows||{};
   if(estado==="busy"){ el.textContent="Guardando…"; el.className="saved"; return; }
-  if(store && store.pending().some(o=>o.key==="m:"+curMonth)){ el.textContent=textoEspera(); el.className="saved warn"; return; }
+  if(estado==="subiendo"){ el.textContent="Guardadas · subiendo a la hoja…"; el.className="saved ok"; return; }
+  if(store && store.pending().some(o=>o.key==="m:"+curMonth)){
+    if(store.motivo && !store.enviando()){ el.textContent=textoEspera(); el.className="saved warn"; }   // falló de verdad
+    else { el.textContent="Guardadas · subiendo a la hoja…"; el.className="saved ok"; }                 // subiendo
+    return; }
   const ult=Object.values(rows).map(r=>r.savedAt||"").sort().pop();
   el.textContent = ult ? `Último cambio guardado el ${hora(ult)}` : ""; el.className="saved"+(ult?" ok":"");
 }
@@ -904,16 +910,18 @@ function updTotal(){ const {ui,soc}=estadoPantalla(); const on=Object.values(ui)
 async function savePagos(){
   const month=curMonth; if(isLocked(month)) return; const c=cambiosPagos();
   if(!Object.keys(c.set).length && !c.unset.length && !Object.keys(c.soc).length){ setStatus("p-status","No hay cambios que guardar.","ok"); return; }
-  botonEstado("busy"); lineaPagos("busy"); setStatus("p-status","");
+  setStatus("p-status","");
   const ops=[];
   if(Object.keys(c.set).length||c.unset.length) ops.push({action:"pagaments", key:"m:"+month, data:{month, set:c.set, unset:c.unset, nous:Object.keys(c.set).filter(pid=>!basePag.rows[pid])}});
   Object.keys(c.soc).forEach(pid=>{ const p=data.persons[pid]; if(!p) return; ops.push({action:"persona", key:"p:"+pid, data:{id:pid, set:{socia:{...(p.socia||{}),[curSeasonKey()]:{amount:c.soc[pid],date:todayISO()}}}}}); });
+  // 1) Al instante: guardado en el móvil y en pantalla. 2) Por detrás: se sube a la hoja (barrita de arriba).
   ops.forEach(op=>aplicarOp(data,op)); abiertos.delete("m:"+month); clearPagDraft(month);
-  let cola=false, error=null;
-  for(const op of ops){ try{ const res=await store.send(op); if(res.encola) cola=true; else { if(res.pagos) data.pagos[month]={month, rows:res.pagos.rows}; if(res.person) data.persons[res.person.id]=res.person; } } catch(e){ error=e; } }
+  botonEstado("ok","Cuotas guardadas ✓"); renderPagos(); lineaPagos("subiendo"); updPendientes();
+  let error=null;
+  await Promise.all(ops.map(op=>store.send(op).then(res=>{ if(res.encola) return; if(res.pagos) data.pagos[month]={month, rows:res.pagos.rows}; if(res.person) data.persons[res.person.id]=res.person; }).catch(e=>{ error=e; })));
   if(error){ botonEstado("err","No se ha guardado"); setStatus("p-status","La hoja ha rechazado algún cambio: "+error.message,"err"); refresh(); }
-  else botonEstado("ok", cola?textoEsperaCorto():"Cuotas guardadas ✓");
-  renderPagos(); updPendientes();
+  if(vistaActual==="pagos" && curMonth===month && !pagosTocados()) renderPagos(); else if(curMonth===month) lineaPagos();
+  updPendientes();
 }
 
 // ===== 4. PERSONAS =====

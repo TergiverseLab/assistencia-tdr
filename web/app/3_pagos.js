@@ -91,7 +91,11 @@ function renderPagos(){
 function lineaPagos(estado){
   const el=$("p-saved"); const rows=(data.pagos[curMonth]||{rows:{}}).rows||{};
   if(estado==="busy"){ el.textContent="Guardando…"; el.className="saved"; return; }
-  if(store && store.pending().some(o=>o.key==="m:"+curMonth)){ el.textContent=textoEspera(); el.className="saved warn"; return; }
+  if(estado==="subiendo"){ el.textContent="Guardadas · subiendo a la hoja…"; el.className="saved ok"; return; }
+  if(store && store.pending().some(o=>o.key==="m:"+curMonth)){
+    if(store.motivo && !store.enviando()){ el.textContent=textoEspera(); el.className="saved warn"; }   // falló de verdad
+    else { el.textContent="Guardadas · subiendo a la hoja…"; el.className="saved ok"; }                 // subiendo
+    return; }
   const ult=Object.values(rows).map(r=>r.savedAt||"").sort().pop();
   el.textContent = ult ? `Último cambio guardado el ${hora(ult)}` : ""; el.className="saved"+(ult?" ok":"");
 }
@@ -101,14 +105,16 @@ function updTotal(){ const {ui,soc}=estadoPantalla(); const on=Object.values(ui)
 async function savePagos(){
   const month=curMonth; if(isLocked(month)) return; const c=cambiosPagos();
   if(!Object.keys(c.set).length && !c.unset.length && !Object.keys(c.soc).length){ setStatus("p-status","No hay cambios que guardar.","ok"); return; }
-  botonEstado("busy"); lineaPagos("busy"); setStatus("p-status","");
+  setStatus("p-status","");
   const ops=[];
   if(Object.keys(c.set).length||c.unset.length) ops.push({action:"pagaments", key:"m:"+month, data:{month, set:c.set, unset:c.unset, nous:Object.keys(c.set).filter(pid=>!basePag.rows[pid])}});
   Object.keys(c.soc).forEach(pid=>{ const p=data.persons[pid]; if(!p) return; ops.push({action:"persona", key:"p:"+pid, data:{id:pid, set:{socia:{...(p.socia||{}),[curSeasonKey()]:{amount:c.soc[pid],date:todayISO()}}}}}); });
+  // 1) Al instante: guardado en el móvil y en pantalla. 2) Por detrás: se sube a la hoja (barrita de arriba).
   ops.forEach(op=>aplicarOp(data,op)); abiertos.delete("m:"+month); clearPagDraft(month);
-  let cola=false, error=null;
-  for(const op of ops){ try{ const res=await store.send(op); if(res.encola) cola=true; else { if(res.pagos) data.pagos[month]={month, rows:res.pagos.rows}; if(res.person) data.persons[res.person.id]=res.person; } } catch(e){ error=e; } }
+  botonEstado("ok","Cuotas guardadas ✓"); renderPagos(); lineaPagos("subiendo"); updPendientes();
+  let error=null;
+  await Promise.all(ops.map(op=>store.send(op).then(res=>{ if(res.encola) return; if(res.pagos) data.pagos[month]={month, rows:res.pagos.rows}; if(res.person) data.persons[res.person.id]=res.person; }).catch(e=>{ error=e; })));
   if(error){ botonEstado("err","No se ha guardado"); setStatus("p-status","La hoja ha rechazado algún cambio: "+error.message,"err"); refresh(); }
-  else botonEstado("ok", cola?textoEsperaCorto():"Cuotas guardadas ✓");
-  renderPagos(); updPendientes();
+  if(vistaActual==="pagos" && curMonth===month && !pagosTocados()) renderPagos(); else if(curMonth===month) lineaPagos();
+  updPendientes();
 }

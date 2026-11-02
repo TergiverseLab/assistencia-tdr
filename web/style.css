@@ -117,7 +117,7 @@ tr.tap{cursor:pointer}
 /* personas */
 .person{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;min-height:var(--tap);padding:6px 0;border-bottom:1px solid var(--line)}
 .person .name{font-size:1.05rem}
-.person .name.off{color:var(--muted);text-decoration:line-through}
+.person .name.off{color:var(--muted)}
 .person .name small{display:block;color:var(--muted);font-size:.78rem;text-decoration:none}
 .note{font-size:.85rem;color:var(--muted);margin:0}
 .person .name[data-ficha]{cursor:pointer}

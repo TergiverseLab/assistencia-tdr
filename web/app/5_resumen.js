@@ -35,7 +35,7 @@ document.querySelectorAll('select[data-ctx="season"]').forEach(sel=>sel.addEvent
 const inCtxSession = k => (ctx.season==="all"||sesSeason(k)===ctx.season) && (ctx.group==="all"||sesGroup(k)===ctx.group||(!data.sessions[k].group&&sesSeason(k)==="T1")); // T1: los ensayos sin grupo salen en los dos
 const inCtxMonth = ym => ctx.season==="all"||seasonOf(ym)===ctx.season;
 function renderSummary(){
-  renderCtx();
+  renderCtx(); updExport();
   const ids=Object.keys(data.sessions).filter(inCtxSession).sort((a,b)=>(data.sessions[a].date||a).localeCompare(data.sessions[b].date||b)||a.localeCompare(b)); const n=ids.length;
   $("r-noses").hidden=n>0; $("r-noses").textContent = Object.keys(data.sessions).length ? `Todavía no hay sesiones guardadas en ${seasonLabel(ctx.season)}${ctx.group!=="all"?" · grup "+ctx.group:""}. Elige otra temporada arriba para ver las anteriores.` : "Todavía no se ha pasado lista ninguna vez. Las sesiones aparecerán aquí a partir de la primera que guardes."; $("r-tiles").hidden=n===0;
   // participantes: quien vino a alguna sesión o pagó algún mes de la selección
@@ -61,8 +61,7 @@ function renderSummary(){
   $("r-socias").hidden=!socias.length; $("r-socias").textContent = socias.length ? `Socias de la asociación ${sKey}: ${socias.length} (${socias.reduce((a,p)=>a+(p.socia[sKey].amount||0),0)} € en cuotas de socia).` : `Todavía no hay socias de la asociación registradas en la temporada ${sKey}.`;
 }
 
-// Exportar = la hoja de Google de verdad (con sus pestañas para mirar), descargada como Excel o abierta en Google
+// "Abrir la hoja" = la hoja de Google de verdad. "Descargar Excel" depende de lo que se mire: ver 8_exportar.js
 const SHEET_ID="1yTIa_RV2Yb_k9BLf40xuxZcDD9t2EzukTQco4fAoj9A";
-$("r-xlsx").href=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=xlsx`;
 $("r-open").href=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit`;
 

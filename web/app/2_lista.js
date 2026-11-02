@@ -148,10 +148,10 @@ async function saveSession(){
 // Borrar una sesión entera (p. ej. una de prueba). Pide confirmación y queda en el Historial.
 $("l-borrar").addEventListener("click",()=>{
   const sid=curSessionId; if(!sid||!data.sessions[sid]) return; const d=data.sessions[sid].date||sid;
-  confirmar($("l-acciones"), `¿Borrar la sesión del ${DIAS[new Date(d+"T12:00:00").getDay()]} ${fmt(d)}? Desaparece de la lista y de las estadísticas.`, "Sí, borrarla", async()=>{
+  confirmar($("l-acciones"), `¿Estás seguro de borrar el registro de asistencia del ${DIAS[new Date(d+"T12:00:00").getDay()]} ${fmt(d)}? Desaparece del Resumen y de la hoja.`, "Sí, borrar", async()=>{
     const op={action:"deleteSession", key:"d:"+sid, data:{id:sid}}; aplicarOp(data,op); abiertos.delete("s:"+sid); clearDraft();
-    curSessionId=null; setDate(d); setStatus("l-status","Sesión borrada.","ok");
-    try{ const res=await store.send(op); if(res.encola) setStatus("l-status","Sesión borrada. "+textoEspera(),"ok"); }
+    curSessionId=null; setDate(d); setStatus("l-status","Registro de asistencia borrado.","ok");
+    try{ const res=await store.send(op); if(res.encola) setStatus("l-status","Registro de asistencia borrado. "+textoEspera(),"ok"); }
     catch(e){ setStatus("l-status","La hoja ha rechazado el borrado: "+e.message,"err"); refresh(); }
     updPendientes();
   });

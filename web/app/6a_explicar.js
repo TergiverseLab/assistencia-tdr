@@ -24,7 +24,7 @@ function explicarRegistro(r){
   }
   if((m=t.match(/^Mes (cerrado|reabierto): (.+)$/))) return {titulo:`Cuotas · ${m[2]}`, det:[m[1]==="cerrado"?"Mes cerrado: ya no se pueden tocar sus cuotas sin desbloquear":"Mes reabierto para corregir"]};
   if((m=t.match(/^Ficha de (.+?): (.*)$/))) return {titulo:`Datos personales · ${m[1]}`, det:[m[2]==="sin cambios"?"Guardados sin cambios":`Actualizado: ${m[2]}`]};
-  if((m=t.match(/^Sesión borrada: (\d{4}-\d\d-\d\d)(-\w+)?$/))) return {titulo:`Asistencia · ${diaDe(fmt(m[1]))}`, det:["Sesión borrada"]};
+  if((m=t.match(/^Sesión borrada: (\d{4}-\d\d-\d\d)(-\w+)?$/))) return {titulo:`Asistencia · ${diaDe(fmt(m[1]))}`, det:["Registro de asistencia borrado"]};
   if((m=t.match(/^Sesión borrada: (.+)$/))) return {titulo:"Asistencia", det:[`Sesión borrada: ${m[1]}`]};
   // personas: puede haber varios cambios separados por " · "
   const partes=t.split(" · "), det=[]; let quien="";

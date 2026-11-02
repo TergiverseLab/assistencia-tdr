@@ -11,12 +11,12 @@ function cargarXLSX(){
 function etiquetaCtx(){ if(ctx.season==="all") return "Todas las temporadas"; const l=seasonLabel(ctx.season); return ctx.group!=="all" ? l.replace(/^(\S+)/,"$1 "+ctx.group) : l; }
 function updExport(){
   const todo=ctx.season==="all";
-  $("r-xlsx").textContent = todo ? "Descargar Excel · todas las temporadas" : "Descargar Excel · "+etiquetaCtx().split(" · ")[0];
+  $("r-xlsx").textContent = todo ? "Descargar la hoja maestra (Excel)" : "Descargar Excel simplificado · "+etiquetaCtx().split(" · ")[0];
   $("r-xlsx").href = todo ? `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=xlsx` : "#";
   $("r-xlsx").target = todo ? "_blank" : "";
   $("r-exnote").textContent = todo
-    ? "La hoja «Assistència i quotes TdR» entera, con todas sus pestañas. Hace falta tener acceso a ella con tu cuenta de Google."
-    : `Solo ${etiquetaCtx()}, con los mismos números que ves aquí. Para descargarlo todo, elige «Todas las temporadas» arriba.`;
+    ? "La hoja maestra «Assistència i quotes TdR» entera, con sus pestañas para mirar (Inici, Participants, Assistència, Quotes) y los datos. Hace falta tener acceso con tu cuenta de Google."
+    : `Excel sencillo, sin el diseño de la hoja maestra: solo ${etiquetaCtx()}, en tablas (resumen, sesiones, asistencia por persona, cuotas), con los mismos números que ves aquí. La versión con diseño es la hoja maestra: elige «Todas las temporadas» o ábrela abajo.`;
 }
 // Las mismas cuentas que Resumen, en tablas
 function tablasCtx(){

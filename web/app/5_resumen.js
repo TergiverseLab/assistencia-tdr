@@ -56,9 +56,9 @@ function renderSummary(){
   const nm=k=>(data.persons[k]||{name:k}).name;
   const tb=$("r-table").querySelector("tbody"); tb.innerHTML="";
   $("r-wrap").hidden=!conLista.length; $("r-nolista").hidden=!!conLista.length||!n;
-  $("r-nolista").hidden=true; $("r-perstit").hidden=!conLista.length;   // sin listas por persona: esta parte no sale
+  const hayGente=Object.keys(counts).length>0; $("r-nolista").hidden=true; $("r-perstit").hidden=!hayGente; $("r-wrap").hidden=!hayGente;   // solo si hay alguien en alguna lista   // sin listas por persona: esta parte no sale
   Object.keys(counts).sort((a,b)=>counts[b]-counts[a]||nm(a).localeCompare(nm(b),"es")).forEach(k=>{ const tr=document.createElement("tr"); tr.innerHTML=`<td>${esc(nm(k))}</td><td class="n">${counts[k]} de ${conLista.length}</td>`; tb.append(tr); });
-  $("r-tablenote").textContent = !conLista.length ? "" : conLista.length===n ? `De las ${n} sesiones de esta selección.` : `Contando solo las ${conLista.length} sesiones en que se pasó lista persona por persona (de ${n}).`;
+  $("r-tablenote").textContent="";   // sin notas: la tabla habla sola
   const months=Object.keys(data.pagos).filter(inCtxMonth).sort(); // de más antiguo a más reciente
   const tp=$("r-pagos").querySelector("tbody"); tp.innerHTML="";
   const mi=months.map(m=>{ const rows=data.pagos[m].rows||{}; const t=Object.values(rows).reduce((a,x)=>a+(x.amount||0),0); const tr=document.createElement("tr"); tr.innerHTML=`<td>${monthName(m)}</td><td class="n">${Object.keys(rows).length}</td><td class="n">${t} €</td>`; tp.append(tr); return {label:shortMonth(m),value:t}; });

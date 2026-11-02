@@ -46,7 +46,7 @@ function pintarFicha(f){
     ${fitxesAviso?`<p class="status ok">${esc(fitxesAviso)}</p>`:""}
     <div class="row"><button class="btn small f-save" type="button">Guardar y cerrar</button><button class="btn ghost small f-cerrar" type="button">Cerrar</button><span class="saved f-saved ${fx.savedAt?"ok":""}">${fx.savedAt?"Guardada el "+esc(hora(fx.savedAt)):""}</span></div>`;
   f.innerHTML=`
-    <div class="row f-estado"><span class="f-est">${off?"De baja"+(p.to?" desde "+esc(monthName(p.to)):""):"Activa"+(p.from?" · alta en "+esc(monthName(p.from)):"")}</span>
+    <div class="row f-estado"><span class="f-est">${off?"De baja"+(p.to?" desde "+esc(monthName(p.to)):""):"Activa"+(textoDesde(pid)?" · "+esc(textoDesde(pid)):"")}</span>
       ${off?"":`<button class="btn ghost small f-soc ${soc?"on":""}" type="button" aria-pressed="${!!soc}" title="Socia de la Associació Laboratori Línia de Fuga (cuota anual)">${soc?"Socia de la asociación ✓":"Socia de la asociación"}</button>`}
       <button class="btn ghost small f-baja" type="button">${off?"Reactivar":"Dar de baja"}</button></div>
     ${abierto?`<h4>Datos personales</h4>`:""}

@@ -28,7 +28,7 @@ function renderPersons(){
   all.forEach(p=>{
     const off=p.active===false; const soc=p.socia&&p.socia[season]; const div=document.createElement("div"); div.className="person";
     const hist=ps[p.id]?[...ps[p.id].seasons].sort().join(", "):"";
-    div.innerHTML=`<button class="name linklike ${off?"off":""}" type="button" data-ficha="${esc(p.id)}" aria-label="Ficha de ${esc(p.name)}">${esc(p.name)}<small>${off?("baja"+(p.to?" desde "+esc(monthName(p.to)):"")+(hist?" · "+esc(hist):"")):(soc?`socia de la asociación · ${Number(soc.amount)||0} €`:(p.from?"alta en "+esc(monthName(p.from)):"activa"))}</small></button>
+    div.innerHTML=`<button class="name linklike ${off?"off":""}" type="button" data-ficha="${esc(p.id)}" aria-label="Ficha de ${esc(p.name)}">${esc(p.name)}<small>${off?("baja"+(p.to?" desde "+esc(monthName(p.to)):"")+(hist?" · "+esc(hist):"")):(soc?`socia de la asociación · ${Number(soc.amount)||0} €`:(esc(textoDesde(p.id))||"activa"))}</small></button>
       ${off?"<span></span>":`<button class="btn ghost small ${soc?"on":""}" type="button" data-soc="${esc(p.id)}" aria-pressed="${!!soc}" aria-label="Socia: ${esc(p.name)}">Socia</button>`}
       <button class="btn ghost small" type="button" data-id="${esc(p.id)}" aria-label="${off?"Reactivar":"Baja"}: ${esc(p.name)}">${off?"Reactivar":"Baja"}</button>`;
     list.append(div);

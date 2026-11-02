@@ -491,7 +491,7 @@ async function pickStore(){
 
 (function(){
 // ===== 1. BASE: utilidades, temporadas, navegación, botón Guardar =====
-const APP_VERSION = "02/11 23:45";
+const APP_VERSION = "02/11 23:47";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;          // cuota mensual habitual (septiembre fue 25)
 const $ = id => document.getElementById(id);
@@ -592,6 +592,17 @@ function textoEspera(){
     : "Sin conexión. La información se actualizará cuando vuelvas a tener conexión.";
 }
 const textoEsperaCorto = () => store && store.motivo==="puente" ? "Pendiente: falta actualizar el puente de la hoja" : "Sin conexión";
+
+// Desde cuándo viene alguien: la primera sesión en la que consta o el primer mes que pagó (no el campo "alta",
+// que en las importaciones quedó con la fecha de la importación). Devuelve "AAAA-MM" o "".
+function desdeCuando(pid){
+  let min="";
+  Object.keys(data.sessions).forEach(k=>{ const s=data.sessions[k]; if(s.present.includes(pid)){ const m=(s.date||k).slice(0,7); if(!min||m<min) min=m; } });
+  Object.keys(data.pagos).forEach(m=>{ if((data.pagos[m].rows||{})[pid] && (!min||m<min)) min=m; });
+  const p=data.persons[pid]; if(p&&p.from&&(!min||p.from<min)) min=p.from;
+  return min;
+}
+const textoDesde = pid => { const m=desdeCuando(pid); return m ? `en el taller desde ${monthName(m)} (${seasonOf(m)})` : ""; };
 
 // ===== 2. LISTA =====
 // La sesión se identifica por su id (fecha; en la T1, fecha-grupo). Al guardar se mandan SOLO los cambios respecto
@@ -884,7 +895,7 @@ function renderPersons(){
   all.forEach(p=>{
     const off=p.active===false; const soc=p.socia&&p.socia[season]; const div=document.createElement("div"); div.className="person";
     const hist=ps[p.id]?[...ps[p.id].seasons].sort().join(", "):"";
-    div.innerHTML=`<button class="name linklike ${off?"off":""}" type="button" data-ficha="${esc(p.id)}" aria-label="Ficha de ${esc(p.name)}">${esc(p.name)}<small>${off?("baja"+(p.to?" desde "+esc(monthName(p.to)):"")+(hist?" · "+esc(hist):"")):(soc?`socia de la asociación · ${Number(soc.amount)||0} €`:(p.from?"alta en "+esc(monthName(p.from)):"activa"))}</small></button>
+    div.innerHTML=`<button class="name linklike ${off?"off":""}" type="button" data-ficha="${esc(p.id)}" aria-label="Ficha de ${esc(p.name)}">${esc(p.name)}<small>${off?("baja"+(p.to?" desde "+esc(monthName(p.to)):"")+(hist?" · "+esc(hist):"")):(soc?`socia de la asociación · ${Number(soc.amount)||0} €`:(esc(textoDesde(p.id))||"activa"))}</small></button>
       ${off?"<span></span>":`<button class="btn ghost small ${soc?"on":""}" type="button" data-soc="${esc(p.id)}" aria-pressed="${!!soc}" aria-label="Socia: ${esc(p.name)}">Socia</button>`}
       <button class="btn ghost small" type="button" data-id="${esc(p.id)}" aria-label="${off?"Reactivar":"Baja"}: ${esc(p.name)}">${off?"Reactivar":"Baja"}</button>`;
     list.append(div);
@@ -959,7 +970,7 @@ function pintarFicha(f){
     ${fitxesAviso?`<p class="status ok">${esc(fitxesAviso)}</p>`:""}
     <div class="row"><button class="btn small f-save" type="button">Guardar y cerrar</button><button class="btn ghost small f-cerrar" type="button">Cerrar</button><span class="saved f-saved ${fx.savedAt?"ok":""}">${fx.savedAt?"Guardada el "+esc(hora(fx.savedAt)):""}</span></div>`;
   f.innerHTML=`
-    <div class="row f-estado"><span class="f-est">${off?"De baja"+(p.to?" desde "+esc(monthName(p.to)):""):"Activa"+(p.from?" · alta en "+esc(monthName(p.from)):"")}</span>
+    <div class="row f-estado"><span class="f-est">${off?"De baja"+(p.to?" desde "+esc(monthName(p.to)):""):"Activa"+(textoDesde(pid)?" · "+esc(textoDesde(pid)):"")}</span>
       ${off?"":`<button class="btn ghost small f-soc ${soc?"on":""}" type="button" aria-pressed="${!!soc}" title="Socia de la Associació Laboratori Línia de Fuga (cuota anual)">${soc?"Socia de la asociación ✓":"Socia de la asociación"}</button>`}
       <button class="btn ghost small f-baja" type="button">${off?"Reactivar":"Dar de baja"}</button></div>
     ${abierto?`<h4>Datos personales</h4>`:""}

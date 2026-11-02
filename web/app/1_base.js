@@ -100,3 +100,14 @@ function textoEspera(){
     : "Sin conexión. La información se actualizará cuando vuelvas a tener conexión.";
 }
 const textoEsperaCorto = () => store && store.motivo==="puente" ? "Pendiente: falta actualizar el puente de la hoja" : "Sin conexión";
+
+// Desde cuándo viene alguien: la primera sesión en la que consta o el primer mes que pagó (no el campo "alta",
+// que en las importaciones quedó con la fecha de la importación). Devuelve "AAAA-MM" o "".
+function desdeCuando(pid){
+  let min="";
+  Object.keys(data.sessions).forEach(k=>{ const s=data.sessions[k]; if(s.present.includes(pid)){ const m=(s.date||k).slice(0,7); if(!min||m<min) min=m; } });
+  Object.keys(data.pagos).forEach(m=>{ if((data.pagos[m].rows||{})[pid] && (!min||m<min)) min=m; });
+  const p=data.persons[pid]; if(p&&p.from&&(!min||p.from<min)) min=p.from;
+  return min;
+}
+const textoDesde = pid => { const m=desdeCuando(pid); return m ? `en el taller desde ${monthName(m)} (${seasonOf(m)})` : ""; };

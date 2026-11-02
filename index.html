@@ -418,14 +418,14 @@ function SheetStore(url){
   const ls = { get(k){ try{ return JSON.parse(localStorage.getItem(k)||"null"); }catch(e){ return null; } }, set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} } };
   const queue=()=>{ const q=ls.get(QK); return Array.isArray(q)?q.filter(o=>o&&o.action&&o.key):[]; };
   const setQueue=q=>ls.set(QK,q);
-  const st = { onResult:null, onChange:null, errors:[], ultimo:{} };
+  const st = { onResult:null, onChange:null, errors:[], ultimo:{}, motivo:null }; // motivo de la espera: "red" o "puente" (la hoja tiene el puente antiguo)
   async function post(op){
     let r, j;
     try { r = await fetch(url,{method:"POST",body:JSON.stringify({action:op.action,data:op.data})}); } // sin cabeceras: evita el preflight CORS
     catch(e){ throw Object.assign(new Error("sin red"),{red:true}); }
     try { j = await r.json(); } catch(e){ throw Object.assign(new Error("respuesta no válida"),{red:true}); }
     // "acción desconocida" = el puente de la hoja aún es la versión anterior: se guarda y se reintenta más tarde
-    if (!j.ok) throw Object.assign(new Error(j.error||"error del servidor"),{red:!!j.retry || /desconocida/.test(j.error||"")});
+    if (!j.ok) throw Object.assign(new Error(j.error||"error del servidor"),{red:!!j.retry || /desconocida/.test(j.error||""), puente:/desconocida/.test(j.error||"")});
     return j;
   }
   let flushing = null; const leyendo = [];
@@ -435,11 +435,11 @@ function SheetStore(url){
       let q = queue();
       while (q.length){
         const op = q[0];
-        try { const res = await post(op); q = queue(); q.shift(); setQueue(q); st.ultimo[op.key] = res;
+        try { const res = await post(op); st.motivo = null; q = queue(); q.shift(); setQueue(q); st.ultimo[op.key] = res;
           leyendo.forEach(l=>l.push(op));                                    // por si una lectura en curso trae datos de antes
           const c=ls.get(CK); if(c&&c.data){ aplicarOp(c.data,op); ls.set(CK,c); } // la copia del móvil, al día
           if (st.onResult) st.onResult(op,res); }
-        catch(e){ if (e.red) break; q = queue(); q.shift(); setQueue(q); st.errors.push({op, error:e.message}); if (st.onResult) st.onResult(op,null,e); }
+        catch(e){ if (e.red){ st.motivo = e.puente ? "puente" : "red"; break; } q = queue(); q.shift(); setQueue(q); st.errors.push({op, error:e.message}); if (st.onResult) st.onResult(op,null,e); }
       }
       if (st.onChange) st.onChange();
     })().finally(()=>{ flushing=null; });
@@ -489,7 +489,7 @@ async function pickStore(){
 
 (function(){
 // ===== 1. BASE: utilidades, temporadas, navegación, botón Guardar =====
-const APP_VERSION = "02/11 23:38";
+const APP_VERSION = "02/11 23:40";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;          // cuota mensual habitual (septiembre fue 25)
 const $ = id => document.getElementById(id);
@@ -568,7 +568,7 @@ $("save").addEventListener("click",()=>{ if(guardando) return; if(vistaActual===
 // ---------- avisos de cambios pendientes de subir ----------
 function updPendientes(){
   const n = store && store.pending ? store.pending().length : 0; const b=$("banner");
-  if(n){ b.hidden=false; b.className="banner warn"; b.innerHTML=`Sin conexión. La información se actualizará cuando vuelvas a tener conexión. <button class="btn ghost small" type="button" id="b-retry">Reintentar ahora</button>`;
+  if(n){ b.hidden=false; b.className="banner warn"; b.innerHTML=`${esc(textoEspera())} <button class="btn ghost small" type="button" id="b-retry">Reintentar ahora</button>`;
     $("b-retry").onclick=async()=>{ $("b-retry").disabled=true; await store.retry(); updPendientes(); }; }
   else if(b.classList.contains("warn")){ b.hidden=true; b.className="banner"; b.textContent=""; }
 }
@@ -582,6 +582,14 @@ function confirmar(fila, texto, si, alSi){
   const [bSi,bNo]=box.querySelectorAll("button"); const cerrar=()=>{ box.remove(); fila.hidden=false; };
   bNo.onclick=cerrar; bSi.onclick=()=>{ cerrar(); alSi(); }; bSi.focus();
 }
+
+// Por qué hay cambios esperando: sin internet, o la hoja todavía tiene el puente antiguo. Lo guardado no se pierde.
+function textoEspera(){
+  return store && store.motivo==="puente"
+    ? "La hoja todavía tiene el puente antiguo: falta publicar la nueva versión (Implementar › Gestionar implementaciones › Nueva versión). Lo guardado no se pierde: subirá en cuanto esté."
+    : "Sin conexión. La información se actualizará cuando vuelvas a tener conexión.";
+}
+const textoEsperaCorto = () => store && store.motivo==="puente" ? "Pendiente: falta actualizar el puente de la hoja" : "Sin conexión";
 
 // ===== 2. LISTA =====
 // La sesión se identifica por su id (fecha; en la T1, fecha-grupo). Al guardar se mandan SOLO los cambios respecto
@@ -667,7 +675,7 @@ function loadSession(id){
 }
 function lineaGuardada(estado){
   const el=$("l-saved"); const s=curSessionId&&data.sessions[curSessionId];
-  if(estado==="cola"){ el.textContent="Sin conexión. Se actualizará cuando vuelvas a tener conexión."; el.className="saved warn"; return; }
+  if(estado==="cola"){ el.textContent=textoEspera(); el.className="saved warn"; return; }
   if(estado==="busy"){ el.textContent="Guardando…"; el.className="saved"; return; }
   if(s&&s.savedAt){ el.textContent=`Guardada el ${hora(s.savedAt)}`; el.className="saved ok"; }
   else if(s){ el.textContent=""; el.className="saved"; }
@@ -716,7 +724,7 @@ async function saveSession(){
   const sigue=()=>curSessionId===sid; // si mientras se guarda se cambia de fecha, no se toca la pantalla nueva
   try{
     const res=await store.send(op);
-    if(res.encola){ botonEstado("ok","Sin conexión"); lineaGuardada("cola"); }
+    if(res.encola){ botonEstado("ok",textoEsperaCorto()); lineaGuardada("cola"); }
     else {
       if(res.session){ const antes=ahora.length; data.sessions[sid]=res.session; const extra=res.session.present.length-antes;
         if(sigue()){ baseSes={id:sid, present:res.session.present.slice(), others:(res.session.others||[]).slice()}; marcar(res.session.present,res.session.others); }
@@ -756,7 +764,7 @@ $("p-lock").addEventListener("click",()=>{
 });
 async function marcarMes(m,tancat){
   const op={action:"mes", key:"c:"+m, data:{month:m, tancat}}; aplicarOp(data,op); abiertos.delete("m:"+m); renderPagos();
-  try{ const res=await store.send(op); setStatus("p-status", res.encola ? "Sin conexión. Se actualizará cuando vuelvas a tener conexión." : (tancat?`${monthName(m)} cerrado.`:`${monthName(m)} reabierto.`),"ok"); }
+  try{ const res=await store.send(op); setStatus("p-status", res.encola ? textoEspera() : (tancat?`${monthName(m)} cerrado.`:`${monthName(m)} reabierto.`),"ok"); }
   catch(e){ setStatus("p-status","La hoja ha rechazado el cambio: "+e.message,"err"); refresh(); }
   updPendientes();
 }
@@ -822,7 +830,7 @@ function renderPagos(){
 function lineaPagos(estado){
   const el=$("p-saved"); const rows=(data.pagos[curMonth]||{rows:{}}).rows||{};
   if(estado==="busy"){ el.textContent="Guardando…"; el.className="saved"; return; }
-  if(store && store.pending().some(o=>o.key==="m:"+curMonth)){ el.textContent="Sin conexión. Se actualizará cuando vuelvas a tener conexión."; el.className="saved warn"; return; }
+  if(store && store.pending().some(o=>o.key==="m:"+curMonth)){ el.textContent=textoEspera(); el.className="saved warn"; return; }
   const ult=Object.values(rows).map(r=>r.savedAt||"").sort().pop();
   el.textContent = ult ? `Último cambio guardado el ${hora(ult)}` : ""; el.className="saved"+(ult?" ok":"");
 }
@@ -840,7 +848,7 @@ async function savePagos(){
   let cola=false, error=null;
   for(const op of ops){ try{ const res=await store.send(op); if(res.encola) cola=true; else { if(res.pagos) data.pagos[month]={month, rows:res.pagos.rows}; if(res.person) data.persons[res.person.id]=res.person; } } catch(e){ error=e; } }
   if(error){ botonEstado("err","No se ha guardado"); setStatus("p-status","La hoja ha rechazado algún cambio: "+error.message,"err"); refresh(); }
-  else botonEstado("ok", cola?"Sin conexión":"Cuotas guardadas ✓");
+  else botonEstado("ok", cola?textoEsperaCorto():"Cuotas guardadas ✓");
   renderPagos(); updPendientes();
 }
 
@@ -1068,7 +1076,7 @@ function renderHistorial(){
   const box=$("h-list"); box.innerHTML="";
   const pend=store?store.pending():[];
   if(pend.length){
-    const h=document.createElement("h3"); h.className="hday warn"; h.textContent="Sin conexión · se actualizará cuando vuelvas a tener conexión"; box.append(h);
+    const h=document.createElement("h3"); h.className="hday warn"; h.textContent=textoEspera(); box.append(h);
     pend.forEach(op=>{ const li=document.createElement("div"); li.className="hitem pend"; li.innerHTML=`<span class="ht">${esc(hora(op.t).split(" a las ")[1]||"")}</span><span class="hx">${esc(textoPendiente(op))}</span>`; box.append(li); });
   }
   const reg=(data.registre||[]).slice();

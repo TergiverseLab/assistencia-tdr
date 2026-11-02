@@ -78,7 +78,7 @@ $("save").addEventListener("click",()=>{ if(guardando) return; if(vistaActual===
 // ---------- avisos de cambios pendientes de subir ----------
 function updPendientes(){
   const n = store && store.pending ? store.pending().length : 0; const b=$("banner");
-  if(n){ b.hidden=false; b.className="banner warn"; b.innerHTML=`Sin conexión. La información se actualizará cuando vuelvas a tener conexión. <button class="btn ghost small" type="button" id="b-retry">Reintentar ahora</button>`;
+  if(n){ b.hidden=false; b.className="banner warn"; b.innerHTML=`${esc(textoEspera())} <button class="btn ghost small" type="button" id="b-retry">Reintentar ahora</button>`;
     $("b-retry").onclick=async()=>{ $("b-retry").disabled=true; await store.retry(); updPendientes(); }; }
   else if(b.classList.contains("warn")){ b.hidden=true; b.className="banner"; b.textContent=""; }
 }
@@ -92,3 +92,11 @@ function confirmar(fila, texto, si, alSi){
   const [bSi,bNo]=box.querySelectorAll("button"); const cerrar=()=>{ box.remove(); fila.hidden=false; };
   bNo.onclick=cerrar; bSi.onclick=()=>{ cerrar(); alSi(); }; bSi.focus();
 }
+
+// Por qué hay cambios esperando: sin internet, o la hoja todavía tiene el puente antiguo. Lo guardado no se pierde.
+function textoEspera(){
+  return store && store.motivo==="puente"
+    ? "La hoja todavía tiene el puente antiguo: falta publicar la nueva versión (Implementar › Gestionar implementaciones › Nueva versión). Lo guardado no se pierde: subirá en cuanto esté."
+    : "Sin conexión. La información se actualizará cuando vuelvas a tener conexión.";
+}
+const textoEsperaCorto = () => store && store.motivo==="puente" ? "Pendiente: falta actualizar el puente de la hoja" : "Sin conexión";

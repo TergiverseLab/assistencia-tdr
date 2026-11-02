@@ -25,7 +25,7 @@ $("p-lock").addEventListener("click",()=>{
 });
 async function marcarMes(m,tancat){
   const op={action:"mes", key:"c:"+m, data:{month:m, tancat}}; aplicarOp(data,op); abiertos.delete("m:"+m); renderPagos();
-  try{ const res=await store.send(op); setStatus("p-status", res.encola ? "Sin conexión. Se actualizará cuando vuelvas a tener conexión." : (tancat?`${monthName(m)} cerrado.`:`${monthName(m)} reabierto.`),"ok"); }
+  try{ const res=await store.send(op); setStatus("p-status", res.encola ? textoEspera() : (tancat?`${monthName(m)} cerrado.`:`${monthName(m)} reabierto.`),"ok"); }
   catch(e){ setStatus("p-status","La hoja ha rechazado el cambio: "+e.message,"err"); refresh(); }
   updPendientes();
 }
@@ -91,7 +91,7 @@ function renderPagos(){
 function lineaPagos(estado){
   const el=$("p-saved"); const rows=(data.pagos[curMonth]||{rows:{}}).rows||{};
   if(estado==="busy"){ el.textContent="Guardando…"; el.className="saved"; return; }
-  if(store && store.pending().some(o=>o.key==="m:"+curMonth)){ el.textContent="Sin conexión. Se actualizará cuando vuelvas a tener conexión."; el.className="saved warn"; return; }
+  if(store && store.pending().some(o=>o.key==="m:"+curMonth)){ el.textContent=textoEspera(); el.className="saved warn"; return; }
   const ult=Object.values(rows).map(r=>r.savedAt||"").sort().pop();
   el.textContent = ult ? `Último cambio guardado el ${hora(ult)}` : ""; el.className="saved"+(ult?" ok":"");
 }
@@ -109,6 +109,6 @@ async function savePagos(){
   let cola=false, error=null;
   for(const op of ops){ try{ const res=await store.send(op); if(res.encola) cola=true; else { if(res.pagos) data.pagos[month]={month, rows:res.pagos.rows}; if(res.person) data.persons[res.person.id]=res.person; } } catch(e){ error=e; } }
   if(error){ botonEstado("err","No se ha guardado"); setStatus("p-status","La hoja ha rechazado algún cambio: "+error.message,"err"); refresh(); }
-  else botonEstado("ok", cola?"Sin conexión":"Cuotas guardadas ✓");
+  else botonEstado("ok", cola?textoEsperaCorto():"Cuotas guardadas ✓");
   renderPagos(); updPendientes();
 }

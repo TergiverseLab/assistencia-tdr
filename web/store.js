@@ -78,14 +78,14 @@ function SheetStore(url){
   const ls = { get(k){ try{ return JSON.parse(localStorage.getItem(k)||"null"); }catch(e){ return null; } }, set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} } };
   const queue=()=>{ const q=ls.get(QK); return Array.isArray(q)?q.filter(o=>o&&o.action&&o.key):[]; };
   const setQueue=q=>ls.set(QK,q);
-  const st = { onResult:null, onChange:null, errors:[], ultimo:{} };
+  const st = { onResult:null, onChange:null, errors:[], ultimo:{}, motivo:null }; // motivo de la espera: "red" o "puente" (la hoja tiene el puente antiguo)
   async function post(op){
     let r, j;
     try { r = await fetch(url,{method:"POST",body:JSON.stringify({action:op.action,data:op.data})}); } // sin cabeceras: evita el preflight CORS
     catch(e){ throw Object.assign(new Error("sin red"),{red:true}); }
     try { j = await r.json(); } catch(e){ throw Object.assign(new Error("respuesta no válida"),{red:true}); }
     // "acción desconocida" = el puente de la hoja aún es la versión anterior: se guarda y se reintenta más tarde
-    if (!j.ok) throw Object.assign(new Error(j.error||"error del servidor"),{red:!!j.retry || /desconocida/.test(j.error||"")});
+    if (!j.ok) throw Object.assign(new Error(j.error||"error del servidor"),{red:!!j.retry || /desconocida/.test(j.error||""), puente:/desconocida/.test(j.error||"")});
     return j;
   }
   let flushing = null; const leyendo = [];
@@ -95,11 +95,11 @@ function SheetStore(url){
       let q = queue();
       while (q.length){
         const op = q[0];
-        try { const res = await post(op); q = queue(); q.shift(); setQueue(q); st.ultimo[op.key] = res;
+        try { const res = await post(op); st.motivo = null; q = queue(); q.shift(); setQueue(q); st.ultimo[op.key] = res;
           leyendo.forEach(l=>l.push(op));                                    // por si una lectura en curso trae datos de antes
           const c=ls.get(CK); if(c&&c.data){ aplicarOp(c.data,op); ls.set(CK,c); } // la copia del móvil, al día
           if (st.onResult) st.onResult(op,res); }
-        catch(e){ if (e.red) break; q = queue(); q.shift(); setQueue(q); st.errors.push({op, error:e.message}); if (st.onResult) st.onResult(op,null,e); }
+        catch(e){ if (e.red){ st.motivo = e.puente ? "puente" : "red"; break; } q = queue(); q.shift(); setQueue(q); st.errors.push({op, error:e.message}); if (st.onResult) st.onResult(op,null,e); }
       }
       if (st.onChange) st.onChange();
     })().finally(()=>{ flushing=null; });

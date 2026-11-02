@@ -17,7 +17,7 @@ function renderHistorial(){
   const box=$("h-list"); box.innerHTML="";
   const pend=store?store.pending():[];
   if(pend.length){
-    const h=document.createElement("h3"); h.className="hday warn"; h.textContent="Sin conexión · se actualizará cuando vuelvas a tener conexión"; box.append(h);
+    const h=document.createElement("h3"); h.className="hday warn"; h.textContent=textoEspera(); box.append(h);
     pend.forEach(op=>{ const li=document.createElement("div"); li.className="hitem pend"; li.innerHTML=`<span class="ht">${esc(hora(op.t).split(" a las ")[1]||"")}</span><span class="hx">${esc(textoPendiente(op))}</span>`; box.append(li); });
   }
   const reg=(data.registre||[]).slice();

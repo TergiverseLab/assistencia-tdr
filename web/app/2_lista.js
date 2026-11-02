@@ -82,7 +82,7 @@ function loadSession(id){
 }
 function lineaGuardada(estado){
   const el=$("l-saved"); const s=curSessionId&&data.sessions[curSessionId];
-  if(estado==="cola"){ el.textContent="Sin conexión. Se actualizará cuando vuelvas a tener conexión."; el.className="saved warn"; return; }
+  if(estado==="cola"){ el.textContent=textoEspera(); el.className="saved warn"; return; }
   if(estado==="busy"){ el.textContent="Guardando…"; el.className="saved"; return; }
   if(s&&s.savedAt){ el.textContent=`Guardada el ${hora(s.savedAt)}`; el.className="saved ok"; }
   else if(s){ el.textContent=""; el.className="saved"; }
@@ -131,7 +131,7 @@ async function saveSession(){
   const sigue=()=>curSessionId===sid; // si mientras se guarda se cambia de fecha, no se toca la pantalla nueva
   try{
     const res=await store.send(op);
-    if(res.encola){ botonEstado("ok","Sin conexión"); lineaGuardada("cola"); }
+    if(res.encola){ botonEstado("ok",textoEsperaCorto()); lineaGuardada("cola"); }
     else {
       if(res.session){ const antes=ahora.length; data.sessions[sid]=res.session; const extra=res.session.present.length-antes;
         if(sigue()){ baseSes={id:sid, present:res.session.present.slice(), others:(res.session.others||[]).slice()}; marcar(res.session.present,res.session.others); }

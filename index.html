@@ -12,7 +12,6 @@
 <meta name="apple-mobile-web-app-title" content="Assistència TdR">
 <title>Assistència Teatre dels Records</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poiret+One&family=Josefin+Sans:wght@400;600;700&family=Source+Sans+3:wght@400;600&display=swap">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 /* Layout móvil primero: una columna (max 600px centrada en ordenador), cabecera con logo TdR,
    barra de pestañas fija abajo, botón de guardar fijo sobre la barra. Marca LF pequeña al pie. */
@@ -126,6 +125,13 @@ tr.tap{cursor:pointer}
 .person .name.off{color:var(--muted);text-decoration:line-through}
 .person .name small{display:block;color:var(--muted);font-size:.78rem;text-decoration:none}
 .note{font-size:.85rem;color:var(--muted);margin:0}
+.person .name[data-ficha]{cursor:pointer}
+.person .name[data-ficha]:focus-visible{outline:3px solid #888;outline-offset:2px}
+.ficha{background:var(--soft);border-radius:10px;padding:12px 14px;margin:4px 0 10px;display:flex;flex-direction:column;gap:10px}
+.ficha dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0;font-size:.95rem}
+.ficha dt{color:var(--muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;padding-top:2px}
+.ficha dd{margin:0;min-width:0}
+.ficha small{color:var(--muted)}
 .btn.small.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 footer{display:flex;justify-content:flex-end;color:var(--line);font-size:.65rem;margin-top:10px}
 .lf{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:-4px 0 4px;font-size:.72rem;letter-spacing:.02em;white-space:nowrap;color:var(--muted)}
@@ -216,7 +222,7 @@ textarea{font:inherit;font-size:.85rem;width:100%;min-height:140px;background:va
     <div class="card">
       <h2>Alta nueva</h2>
       <div class="row"><input type="text" id="n-name" placeholder="Nombre y apellido" autocomplete="off" style="flex:1"><button class="btn" id="n-add" type="button">Añadir</button></div>
-      <p class="note">La persona aparece en la lista desde el mes actual. Para una baja, toca "Baja": deja de salir en la lista pero conserva su historial.</p>
+      <p class="note">La persona aparece en la lista desde el mes actual. Para una baja, toca "Baja": deja de salir en la lista pero conserva su historial. Toca un nombre para ver su ficha.</p>
     </div>
     <div class="card">
       <div class="row nowrap"><h2>Personas</h2><span class="spacer"></span><span class="note" id="n-count"></span></div>
@@ -242,13 +248,15 @@ textarea{font:inherit;font-size:.85rem;width:100%;min-height:140px;background:va
       <p class="empty" id="r-noses">Todavía no se ha pasado lista ninguna vez. Las sesiones aparecerán aquí a partir de la primera que guardes.</p>
       <div class="tiles" id="r-tiles">
         <div class="tile"><b id="r-sess">0</b><span>sesiones</span></div>
-        <div class="tile"><b id="r-avg">0</b><span>media</span></div>
-        <div class="tile"><b id="r-new">0</b><span>han probado</span></div>
+        <div class="tile"><b id="r-new">0</b><span>participantes</span></div>
+        <div class="tile"><b id="r-avg">0</b><span>media por sesión</span></div>
       </div>
       <p class="note" id="r-socias"></p>
       <div class="chart" id="r-chart-ses"></div>
-      <p class="note">* posibles = sesiones con lista de su grupo desde su primera asistencia (hasta la última si ya está de baja). Las sesiones sin lista no cuentan.</p>
-      <div class="scroll tall" id="r-wrap"><table id="r-table"><thead><tr><th>Persona</th><th class="n">Sesiones</th><th class="n">%</th></tr></thead><tbody></tbody></table></div>
+      <p class="note" id="r-probes" hidden></p>
+      <p class="note" id="r-nolista" hidden>Esta selección no tiene listas de asistencia (antes del 4/11/2026 solo hay listas de la T1). La media sale de las personas inscritas cada mes.</p>
+      <p class="note" id="r-tablenote"></p>
+      <div class="scroll tall" id="r-wrap"><table id="r-table"><thead><tr><th>Persona</th><th class="n">Sesiones</th></tr></thead><tbody></tbody></table></div>
     </div>
     <div class="card">
       <h2>Cuotas por mes</h2>
@@ -257,9 +265,8 @@ textarea{font:inherit;font-size:.85rem;width:100%;min-height:140px;background:va
     </div>
     <div class="card">
       <h2>Exportar</h2>
-      <p class="note">Descarga un Excel con tres pestañas: Assistència, Quotes y Persones.</p>
-      <div class="row"><button class="btn" id="r-xlsx" type="button">Exportar a Excel</button></div>
-      <span class="status" id="r-status" aria-live="polite"></span>
+      <p class="note">La hoja «Assistència i quotes TdR» con todas sus pestañas (Inici, Participants, Assistència, Quotes). Hace falta tener acceso a ella con tu cuenta de Google.</p>
+      <div class="row"><a class="btn" id="r-xlsx" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none">Descargar Excel</a><a class="btn ghost" id="r-open" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none">Abrir la hoja</a></div>
     </div>
   </section>
 
@@ -371,7 +378,7 @@ async function pickStore(){
 
 // ===== LÓGICA DE LA PÁGINA =====
 (function(){
-const APP_VERSION = "02/11 19:43";
+const APP_VERSION = "02/11 22:38";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;           // cuota mensual habitual (septiembre fue 25)
 const defAmount = () => Number($("p-default").value)||DEFAULT_AMOUNT;
@@ -618,6 +625,32 @@ function personSeasons(){
   Object.values(data.persons).forEach(p=>{ if(p.active!==false) add(p.id,curSeasonKey(),null); });
   return m;
 }
+// Ficha de persona: historial completo y corrección del nombre
+function toggleFicha(pid,row){
+  const next=row.nextElementSibling; if(next&&next.classList.contains("ficha")){ next.remove(); return; }
+  document.querySelectorAll("#n-list .ficha").forEach(f=>f.remove());
+  const p=data.persons[pid]; if(!p) return;
+  const ses=Object.keys(data.sessions).filter(k=>data.sessions[k].present.includes(pid)).sort((a,b)=>(data.sessions[a].date||a).localeCompare(data.sessions[b].date||b));
+  const conLista=ses.filter(sesConLista);
+  const temps=[...new Set(ses.map(sesSeason))]; Object.keys(data.pagos).forEach(m=>{ if((data.pagos[m].rows||{})[pid]) temps.push(seasonOf(m)); });
+  const pagos=Object.keys(data.pagos).sort().filter(m=>(data.pagos[m].rows||{})[pid]).map(m=>({m,a:data.pagos[m].rows[pid].amount||0}));
+  const socia=Object.keys(p.socia||{}).sort();
+  const f=document.createElement("div"); f.className="ficha";
+  f.innerHTML=`<dl>
+    <dt>Alta</dt><dd>${p.from?monthName(p.from):"—"}</dd>
+    <dt>Estado</dt><dd>${p.active===false?"baja"+(p.to?" desde "+monthName(p.to):""):"activa"}</dd>
+    <dt>Temporadas</dt><dd>${[...new Set(temps)].sort().map(seasonLabel).map(esc).join("<br>")||"—"}</dd>
+    <dt>Sesiones con lista</dt><dd>${conLista.length}${conLista.length?` <small>(última: ${fmt(data.sessions[conLista[conLista.length-1]].date||conLista[conLista.length-1])})</small>`:""}</dd>
+    <dt>Cuotas</dt><dd>${pagos.length?`${pagos.length} meses · ${pagos.reduce((a,x)=>a+x.a,0)} €<br><small>${pagos.map(x=>shortMonth(x.m)+" "+x.a+" €").join(" · ")}</small>`:"—"}</dd>
+    <dt>Socia</dt><dd>${socia.length?socia.map(k=>`${esc(k)} (${p.socia[k].amount} €)`).join(", "):"—"}</dd>
+  </dl>
+  <div class="row nowrap"><input type="text" value="${esc(p.name)}" aria-label="Nombre" style="flex:1"><button class="btn small" type="button">Guardar nombre</button></div>
+  <span class="status" aria-live="polite"></span>`;
+  const inp=f.querySelector("input"), btn=f.querySelector("button"), st=f.querySelector(".status");
+  btn.addEventListener("click",async()=>{ const name=inp.value.trim(); if(!name||name===p.name) return; const doc={...p,name}; btn.disabled=true;
+    try{ await store.savePerson(doc); data.persons[pid]=doc; renderPersons(); renderRoster(); }catch(e){ if(e.queued){ data.persons[pid]=doc; renderPersons(); renderRoster(); } else { st.textContent="No se ha podido guardar."; st.className="status err"; btn.disabled=false; } } });
+  row.after(f);
+}
 function renderPersons(){
   renderCtx(); const list=$("n-list"); list.innerHTML=""; const season=curSeasonKey(); const ps=personSeasons();
   const cur = ctx.season===curSeasonKey();
@@ -632,11 +665,12 @@ function renderPersons(){
   all.forEach(p=>{
     const off=p.active===false; const soc=p.socia&&p.socia[season]; const div=document.createElement("div"); div.className="person";
     const hist=ps[p.id]?[...ps[p.id].seasons].sort().join(", "):"";
-    div.innerHTML=`<div class="name ${off?"off":""}">${esc(p.name)}<small>${off?("baja"+(p.to?" desde "+monthName(p.to):"")+(hist?" · "+esc(hist):"")):(soc?`sòcia ${season} · ${soc.amount} € · ${fmt(soc.date)}`:(p.from?"alta en "+monthName(p.from):"activa"))}</small></div>
+    div.innerHTML=`<div class="name ${off?"off":""}" data-ficha="${p.id}" role="button" tabindex="0">${esc(p.name)}<small>${off?("baja"+(p.to?" desde "+monthName(p.to):"")+(hist?" · "+esc(hist):"")):(soc?`sòcia ${season} · ${soc.amount} € · ${fmt(soc.date)}`:(p.from?"alta en "+monthName(p.from):"activa"))}</small></div>
       ${off?"<span></span>":`<button class="btn ghost small ${soc?"on":""}" type="button" data-soc="${p.id}" aria-pressed="${!!soc}">Socia</button>`}
       <button class="btn ghost small" type="button" data-id="${p.id}">${off?"Reactivar":"Baja"}</button>`;
     list.append(div);
   });
+  list.querySelectorAll("[data-ficha]").forEach(el=>{ const open=()=>toggleFicha(el.dataset.ficha, el.closest(".person")); el.addEventListener("click",open); el.addEventListener("keydown",e=>{ if(e.key==="Enter") open(); }); });
   list.querySelectorAll("button[data-id]").forEach(b=>b.addEventListener("click",async()=>{
     const p={...data.persons[b.dataset.id]}; const m=todayISO().slice(0,7);
     if(p.active===false){ p.active=true; p.to=""; } else { p.active=false; p.to=m; }
@@ -675,7 +709,7 @@ function bars(el, items, fmtV){ // items: [{label, value}], una sola serie, barr
 }
 const shortMonth = ym => { const [y,m]=ym.split("-"); return MESES[+m-1].slice(0,3)+" "+y.slice(2); };
 // Temporadas reales del Teatre dels Records. Las posteriores se calculan solas (septiembre a agosto).
-const SEASONS=[{id:"T1",label:"T1 · oct–des 2025",from:"2025-10",to:"2026-02"},{id:"T2",label:"T2 · març–juny 2026",from:"2026-03",to:"2026-08"},{id:"T3",label:"T3 · 2026-27",from:"2026-09",to:"2027-08",years:"2026-27"}];
+const SEASONS=[{id:"T1",label:"T1 · oct–des 2025",from:"2025-10",to:"2026-01"},{id:"T2",label:"T2 · febr–juny 2026",from:"2026-02",to:"2026-08"},{id:"T3",label:"T3 · 2026-27",from:"2026-09",to:"2027-08",years:"2026-27"}];
 function seasonOf(ym){ const s=SEASONS.find(s=>ym>=s.from&&ym<=s.to); if(s) return s.id; const [y,m]=ym.split("-").map(Number); const st=m>=9?y:y-1; return `${st}-${String(st+1).slice(2)}`; }
 const seasonLabel = id => id==="all" ? "Todas las temporadas" : (SEASONS.find(s=>s.id===id)||{label:"Temporada "+id}).label;
 // FILTRO COMÚN: una sola selección (temporada + grupo) compartida por Sesiones, Personas y Resumen
@@ -683,7 +717,7 @@ const ctx={season:null,group:"all"};
 const sesSeason = k => seasonOf((data.sessions[k].date||k).slice(0,7));
 const sesGroup = k => data.sessions[k].group || "únic"; // desde la T2 hay un solo grupo: "grup únic"
 function ctxSeasons(){ const set=new Set([...Object.keys(data.sessions).map(sesSeason),...Object.keys(data.pagos).map(seasonOf)]); Object.values(data.persons).forEach(p=>{ if(p.active!==false) set.add(curSeasonKey()); }); return [...set].sort().reverse(); }
-function ctxGroups(){ const g=new Set(); Object.keys(data.sessions).forEach(k=>{ if(ctx.season==="all"||sesSeason(k)===ctx.season) g.add(sesGroup(k)); }); return g.size>1 ? [...g].sort() : []; }
+function ctxGroups(){ const g=new Set(); Object.keys(data.sessions).forEach(k=>{ if((ctx.season==="all"||sesSeason(k)===ctx.season) && data.sessions[k].group) g.add(data.sessions[k].group); }); return g.size>1 ? [...g].sort() : []; }
 let multiGroup=false;
 function renderCtx(){
   if(ctx.season===null){ const ss=ctxSeasons(); ctx.season = ss.includes(curSeasonKey())?curSeasonKey():(ss[0]||"all"); }
@@ -693,23 +727,32 @@ function renderCtx(){
   document.querySelectorAll('select[data-ctx="group"]').forEach(sel=>{ sel.innerHTML='<option value="all">Todos los grupos</option>'+groups.map(g=>`<option value="${g}">${esc("grup "+g)}</option>`).join(""); sel.value=ctx.group; });
 }
 document.querySelectorAll('select[data-ctx]').forEach(sel=>sel.addEventListener("change",()=>{ if(sel.dataset.ctx==="season"){ ctx.season=sel.value; ctx.group="all"; sesMonth=null; } else ctx.group=sel.value; renderCtx(); if(!$("view-ses").hidden) renderSessions(); if(!$("view-pers").hidden) renderPersons(); if(!$("view-res").hidden) renderSummary(); }));
-const inCtxSession = k => (ctx.season==="all"||sesSeason(k)===ctx.season) && (ctx.group==="all"||sesGroup(k)===ctx.group);
+const inCtxSession = k => (ctx.season==="all"||sesSeason(k)===ctx.season) && (ctx.group==="all"||sesGroup(k)===ctx.group||(!data.sessions[k].group&&sesSeason(k)==="T1")); // T1: los ensayos sin grupo salen en los dos
+// Asistencia: listas reales en la T1 (papel) y desde el 4/11/2026 (web). Entre medias, las sesiones se reconstruyeron por cuotas:
+// se cuentan como inscritas − 1,5 (nunca faltaban más de 3; criterio de Mario, 2/11/2026). Igual que en la hoja.
+const LISTAS_WEB_DESDE="2026-11-04";
+const sesConLista = k => { const s=data.sessions[k]; const d=s.date||k; return s.present.length+(s.others||[]).length>0 && (d<"2026-01-01"||d>=LISTAS_WEB_DESDE); };
+const sesAsistencia = k => { const s=data.sessions[k]; const n=s.present.length+(s.others||[]).length; if(!n) return null; return sesConLista(k) ? n : Math.max(0,n-1.5); };
 const inCtxMonth = ym => ctx.season==="all"||seasonOf(ym)===ctx.season;
 function renderSummary(){
   renderCtx();
-  const ids=Object.keys(data.sessions).filter(inCtxSession).sort((a,b)=>(data.sessions[a].date||a).localeCompare(data.sessions[b].date||b)||a.localeCompare(b)); const n=ids.length; const counts={}; let tot=0,nuevas=0;
-  const probes=new Set(); ids.forEach(id=>{ const s=data.sessions[id]; const all=[...s.present,...(s.others||[])]; tot+=all.length; (s.others||[]).forEach(o=>probes.add(o.toLowerCase())); all.forEach(k=>counts[k]=(counts[k]||0)+1); }); nuevas=probes.size;
-  $("r-noses").hidden=n>0; $("r-noses").textContent = Object.keys(data.sessions).length ? `Todavía no hay sesiones guardadas en ${seasonLabel(ctx.season)}${ctx.group!=="all"?" · grup "+ctx.group:""}. Elige otra temporada arriba para ver las anteriores.` : "Todavía no se ha pasado lista ninguna vez. Las sesiones aparecerán aquí a partir de la primera que guardes."; $("r-tiles").hidden=n===0; $("r-wrap").hidden=n===0;
-  $("r-sess").textContent=n; $("r-avg").textContent=n?(tot/n).toFixed(1):"0"; $("r-new").textContent=nuevas;
-  bars($("r-chart-ses"), ids.map(id=>({label:fmt(data.sessions[id].date||id).slice(0,5)+(multiGroup?" "+sesGroup(id)[0]:""), value:data.sessions[id].present.length+(data.sessions[id].others||[]).length})), v=>String(v));
+  const ids=Object.keys(data.sessions).filter(inCtxSession).sort((a,b)=>(data.sessions[a].date||a).localeCompare(data.sessions[b].date||b)||a.localeCompare(b)); const n=ids.length;
+  $("r-noses").hidden=n>0; $("r-noses").textContent = Object.keys(data.sessions).length ? `Todavía no hay sesiones guardadas en ${seasonLabel(ctx.season)}${ctx.group!=="all"?" · grup "+ctx.group:""}. Elige otra temporada arriba para ver las anteriores.` : "Todavía no se ha pasado lista ninguna vez. Las sesiones aparecerán aquí a partir de la primera que guardes."; $("r-tiles").hidden=n===0;
+  // participantes: quien vino a alguna sesión o pagó algún mes de la selección
+  const gente=new Set(); ids.forEach(id=>data.sessions[id].present.forEach(p=>gente.add(p)));
+  if(ctx.group==="all") Object.keys(data.pagos).filter(inCtxMonth).forEach(m=>Object.keys(data.pagos[m].rows||{}).forEach(p=>gente.add(p)));
+  const asis=ids.map(sesAsistencia).filter(v=>v!=null); const media=asis.length?asis.reduce((a,b)=>a+b,0)/asis.length:0;
+  $("r-sess").textContent=n; $("r-avg").textContent=asis.length?media.toFixed(1).replace(".",","):"–"; $("r-new").textContent=gente.size;
+  const probes=new Set(); ids.forEach(id=>(data.sessions[id].others||[]).forEach(o=>probes.add(o.toLowerCase())));
+  $("r-probes").hidden=!probes.size; $("r-probes").textContent=`${probes.size} ${probes.size===1?"persona ha":"personas han"} venido a probar.`;
+  bars($("r-chart-ses"), ids.map(id=>({label:fmt(data.sessions[id].date||id).slice(0,5)+(multiGroup&&data.sessions[id].group?" "+data.sessions[id].group[0]:""), value:Math.round(sesAsistencia(id)||0)})), v=>String(v));
+  // por persona: solo sesiones con lista real
+  const conLista=ids.filter(sesConLista); const counts={}; conLista.forEach(id=>data.sessions[id].present.forEach(k=>counts[k]=(counts[k]||0)+1));
   const nm=k=>(data.persons[k]||{name:k}).name;
   const tb=$("r-table").querySelector("tbody"); tb.innerHTML="";
-  const keys=Object.keys(data.persons).filter(k=>data.persons[k].active!==false||counts[k]).sort((a,b)=>(counts[b]||0)-(counts[a]||0)||nm(a).localeCompare(nm(b),"es"));
-  // % por persona = asistencias / sesiones a las que podía ir: las de su grupo, desde su primera asistencia hasta la última (o hasta hoy si sigue activa)
-  const first={}, last={}, pgroups={};
-  ids.forEach(id=>{ const s=data.sessions[id]; const dt=s.date||id; const g=sesGroup(id); s.present.forEach(p=>{ (pgroups[p]=pgroups[p]||new Set()).add(g); if(!first[p]||dt<first[p]) first[p]=dt; if(!last[p]||dt>last[p]) last[p]=dt; }); });
-  const denom=k=>{ const gs=pgroups[k]; if(!gs) return 0; const p=data.persons[k]; const end = (p&&p.active!==false) ? "9999" : last[k]; return ids.filter(id=>{ const sx=data.sessions[id]; const dt=sx.date||id; return sx.present.length>0 && gs.has(sesGroup(id)) && dt>=first[k] && dt<=end; }).length; }; // las sesiones sin lista (solo constan por el guion) no cuentan como posibles
-  keys.forEach(k=>{ const c=counts[k]||0; const d=denom(k); const tr=document.createElement("tr"); tr.innerHTML=`<td>${esc(nm(k))}</td><td class="n">${c} / ${d}</td><td class="n">${d?Math.round(100*c/d):0}%</td>`; tb.append(tr); });
+  $("r-wrap").hidden=!conLista.length; $("r-nolista").hidden=!!conLista.length||!n;
+  Object.keys(counts).sort((a,b)=>counts[b]-counts[a]||nm(a).localeCompare(nm(b),"es")).forEach(k=>{ const tr=document.createElement("tr"); tr.innerHTML=`<td>${esc(nm(k))}</td><td class="n">${counts[k]}</td>`; tb.append(tr); });
+  $("r-tablenote").textContent = conLista.length ? `Sesiones con lista: ${conLista.length} de ${n}.` : "";
   const months=Object.keys(data.pagos).filter(inCtxMonth).sort(); // de más antiguo a más reciente
   const tp=$("r-pagos").querySelector("tbody"); tp.innerHTML="";
   const mi=months.map(m=>{ const rows=data.pagos[m].rows||{}; const t=Object.values(rows).reduce((a,x)=>a+(x.amount||0),0); const tr=document.createElement("tr"); tr.innerHTML=`<td>${monthName(m)}</td><td class="n">${Object.keys(rows).length}</td><td class="n">${t} €</td>`; tp.append(tr); return {label:shortMonth(m),value:t}; });
@@ -718,32 +761,10 @@ function renderSummary(){
   $("r-socias").hidden=!socias.length; $("r-socias").textContent = socias.length ? `Socias de la asociación ${sKey}: ${socias.length} (${socias.reduce((a,p)=>a+(p.socia[sKey].amount||0),0)} € en cuotas de socia).` : `Todavía no hay socias de la asociación registradas en la temporada ${sKey}.`;
 }
 
-function workbook(){ // tres hojas con los datos actuales
-  const nm=k=>(data.persons[k]||{name:k}).name; const cols=Object.keys(data.persons).sort((a,b)=>nm(a).localeCompare(nm(b),"es"));
-  const ids=Object.keys(data.sessions).sort();
-  const asist=[["Data","Grup",...cols.map(nm),"Altres","Noves","Total"]];
-  ids.forEach(id=>{ const s=data.sessions[id]; const set=new Set(s.present); asist.push([fmt(s.date||id),s.group||"",...cols.map(c=>set.has(c)?1:""),(s.others||[]).join(", "),s.nuevas||0,s.present.length+(s.others||[]).length]); });
-  const quotes=[["Mes","Persona","Import","Data pagament"]];
-  Object.keys(data.pagos).sort().forEach(m=>Object.entries(data.pagos[m].rows||{}).forEach(([k,r])=>quotes.push([monthName(m),nm(k),r.amount,r.date?fmt(r.date):""])));
-  const pers=[["Nom","Activa","Des de","Fins","Sòcia (temporada · data · import)"]];
-  Object.values(data.persons).sort((a,b)=>a.name.localeCompare(b.name,"es")).forEach(p=>pers.push([p.name,p.active===false?"no":"sí",p.from?monthName(p.from):"",p.to?monthName(p.to):"",Object.entries(p.socia||{}).map(([s,v])=>`${s} · ${fmt(v.date)} · ${v.amount} €`).join("; ")]));
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(asist),"Assistència");
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(quotes),"Quotes");
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(pers),"Persones");
-  return XLSX.write(wb,{bookType:"xlsx",type:"array"});
-}
-$("r-xlsx").addEventListener("click",async()=>{
-  if(typeof XLSX==="undefined"){ setStatus("r-status","No se ha podido cargar el generador de Excel. Comprueba la conexión y recarga.","err"); return; }
-  const name=`TeatreDelsRecords_assistencia_quotes_${todayISO()}.xlsx`; const buf=workbook();
-  setStatus("r-status","Preparando el archivo…");
-  try{
-    const dl = (window.claude && window.claude.use) ? await window.claude.use("downloads") : null;
-    if(dl){ await dl.save({filename:name,data:buf}); setStatus("r-status","Excel descargado.","ok"); return; }
-    const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})); a.download=name; document.body.append(a); a.click(); a.remove();
-    setStatus("r-status","Excel descargado.","ok");
-  }catch(e){ setStatus("r-status", e&&e.code==="declined" ? "Descarga cancelada." : "No se ha podido descargar el Excel.", "err"); }
-});
+// Exportar = la hoja de Google de verdad (con sus pestañas para mirar), descargada como Excel o abierta en Google
+const SHEET_ID="1yTIa_RV2Yb_k9BLf40xuxZcDD9t2EzukTQco4fAoj9A";
+$("r-xlsx").href=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=xlsx`;
+$("r-open").href=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit`;
 
 // vuelve a leer los datos guardados (por si se han cambiado desde otro móvil o desde Claude)
 let refreshing=false;

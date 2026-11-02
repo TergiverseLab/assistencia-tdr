@@ -81,13 +81,18 @@ function SheetStore(url){
   const queue=()=>{ const q=ls.get(QK); return Array.isArray(q)?q.filter(o=>o&&o.action&&o.key):[]; };
   const setQueue=q=>ls.set(QK,q);
   const st = { onResult:null, onChange:null, errors:[], ultimo:{}, motivo:null }; // motivo de la espera: "red" o "puente" (la hoja tiene el puente antiguo)
+  // fetch con tiempo límite: una conexión colgada no puede bloquear la cola para siempre
+  function fetchT(u, o, ms){ const c = new AbortController(); const t = setTimeout(()=>c.abort(), ms||25000);
+    return fetch(u, Object.assign({}, o||{}, {signal:c.signal})).finally(()=>clearTimeout(t)); }
+  // Rechazo DEFINITIVO solo si el dato está mal; cualquier otro error de Google (p. ej. "timed out") se reintenta
+  const definitivo = msg => /dato no válido|persona nueva sin nombre|contraseña/.test(msg||"");
   async function post(op){
     let r, j;
-    try { r = await fetch(url,{method:"POST",body:JSON.stringify({action:op.action,data:op.data})}); } // sin cabeceras: evita el preflight CORS
+    try { r = await fetchT(url,{method:"POST",body:JSON.stringify({action:op.action,data:op.data})}); } // sin cabeceras: evita el preflight CORS
     catch(e){ throw Object.assign(new Error("sin red"),{red:true}); }
     try { j = await r.json(); } catch(e){ throw Object.assign(new Error("respuesta no válida"),{red:true}); }
     // "acción desconocida" = el puente de la hoja aún es la versión anterior: se guarda y se reintenta más tarde
-    if (!j.ok) throw Object.assign(new Error(j.error||"error del servidor"),{red:!!j.retry || /desconocida/.test(j.error||""), puente:/desconocida/.test(j.error||"")});
+    if (!j.ok) throw Object.assign(new Error(j.error||"error del servidor"),{red:!definitivo(j.error), puente:/desconocida/.test(j.error||"")});
     return j;
   }
   let flushing = null; const leyendo = [];
@@ -118,7 +123,7 @@ function SheetStore(url){
       await flush().catch(()=>{});
       const hechas=[]; leyendo.push(hechas);
       try {
-        const r=await fetch(url+"?t="+Date.now()); const j=await r.json(); if(!j.ok) throw new Error(j.error||"error");
+        const r=await fetchT(url+"?t="+Date.now(),{},30000); const j=await r.json(); if(!j.ok) throw new Error(j.error||"error");
         const data=normalizar(j); hechas.forEach(op=>aplicarOp(data,op)); ls.set(CK,{t:Date.now(),data:JSON.parse(JSON.stringify(data))});
         queue().forEach(op=>aplicarOp(data,op)); // lo pendiente de subir se ve igualmente
         return data;
@@ -128,7 +133,9 @@ function SheetStore(url){
     // o {encola:true} si no hay red (se enviará sola). Lanza error si el puente la rechaza.
     async send(op){
       op.t = Date.now();
-      let q = queue(); const i = q.findIndex((o,k)=>o.key===op.key && (k>0 || !flushing)); // la primera puede estar enviándose
+      let q = queue();
+      if (op.action==="deleteSession"){ const sk="s:"+op.data.id; q = q.filter((o,k)=>!(o.key===sk && (k>0 || !flushing))); } // borrar: lo pendiente de esa sesión ya no se sube
+      const i = q.findIndex((o,k)=>o.key===op.key && (k>0 || !flushing)); // la primera puede estar enviándose
       if (i>=0) q[i] = fundirOps(q[i], op); else q.push(op);
       setQueue(q); if (st.onChange) st.onChange();
       await flush();

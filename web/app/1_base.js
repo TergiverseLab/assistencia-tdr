@@ -53,6 +53,7 @@ const views=["lista","pagos","hist","pers","res"];
 let vistaActual="lista";
 document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>show(b.dataset.view)));
 function show(v){
+  if(vistaActual==="pers" && v!=="pers"){ clauMem=""; fitxes=null; document.querySelectorAll("#n-list .ficha").forEach(f=>f.dataset.datos=""); }
   vistaActual=v;
   document.querySelectorAll(".tab").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.view===v)));
   views.forEach(k=>$("view-"+k).hidden = k!==v);
@@ -93,14 +94,14 @@ function banner(txt,cls){ const b=$("banner"); if(b.classList.contains("warn")&&
 
 // Confirmación dentro de la página (sin ventanas emergentes): sustituye una fila por la pregunta y dos botones
 // peligro=true (eliminar, dar de baja): aviso resaltado y el botón destacado es "No"
-function confirmar(fila, texto, si, alSi, peligro){
+function confirmar(fila, texto, si, alSi, peligro, alNo){
   const box=document.createElement("div"); box.className="confirm"+(peligro?" danger":""); box.setAttribute("role","alertdialog");
   box.innerHTML = peligro
     ? `<p><b>${esc(texto)}</b></p><div class="row"><button class="btn small no" type="button">No</button><button class="btn ghost small si" type="button">${esc(si)}</button></div>`
     : `<p>${esc(texto)}</p><div class="row"><button class="btn small si" type="button">${esc(si)}</button><button class="btn ghost small no" type="button">No</button></div>`;
   fila.hidden=true; fila.after(box);
   const bSi=box.querySelector(".si"), bNo=box.querySelector(".no"); const cerrar=()=>{ box.remove(); fila.hidden=false; };
-  bNo.onclick=cerrar; bSi.onclick=()=>{ cerrar(); alSi(); }; (peligro?bNo:bSi).focus();
+  bNo.onclick=()=>{ cerrar(); if(alNo) alNo(); }; bSi.onclick=()=>{ cerrar(); alSi(); }; (peligro?bNo:bSi).focus();
 }
 
 // Por qué hay cambios esperando: sin internet, o la hoja todavía tiene el puente antiguo. Lo guardado no se pierde.

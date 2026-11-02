@@ -197,3 +197,10 @@ details.rses[open] summary{margin-bottom:6px}
 .confirm.danger{border:2.5px solid var(--fg);background:var(--soft)}
 .confirm.danger p b{font-weight:700}
 .confirm.danger .si{opacity:.8}
+
+.candado{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;vertical-align:-3px;margin-right:5px}
+#p-lockmsg{color:var(--fg)}
+
+/* quien no ha pagado, al cerrar el mes o en un mes cerrado */
+.pay.falta .name{color:var(--bad)}
+.pay.falta .name small{color:var(--bad);font-weight:600}

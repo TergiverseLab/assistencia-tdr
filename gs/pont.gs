@@ -41,7 +41,8 @@ function upsert(key, keyCols, row){ // solo para las acciones antiguas y la impo
   }
   sh.appendRow(row);
 }
-function nomsPersones(){ const n = {}; rows("persons").forEach(r=>{ if (r[0]) n[String(r[0])] = String(r[1]); }); return n; }
+let NOMS_CACHE = null; // una sola lectura de Persones por guardado
+function nomsPersones(){ if (NOMS_CACHE) return NOMS_CACHE; const n = {}; rows("persons").forEach(r=>{ if (r[0]) n[String(r[0])] = String(r[1]); }); return NOMS_CACHE = n; }
 function registrar(accio, ref, text, ara){ sheet("registre").appendRow([ara, accio, String(ref), text]); }
 
 // ---------- LECTURA: la web lo pide todo al abrirse (con caché hasta el próximo cambio) ----------
@@ -97,7 +98,8 @@ function doPost(e){
     PropertiesService.getScriptProperties().setProperty("versio", String(ara.getTime()));
     PropertiesService.getScriptProperties().setProperty("vistesPendents", "1"); // las vistas se rehacen solas en <10 min
     return out(res);
-  } catch(err) { return out({ok:false, error:String(err)}); }
+  } catch(err) { const e = String(err); // los errores de dato no se reintentan; los de Google (p. ej. "timed out"), sí
+    return out({ok:false, error:e, retry:!/dato no válido|persona nueva sin nombre|contraseña/.test(e)}); }
   finally { lock.releaseLock(); }
 }
 

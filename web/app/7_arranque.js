@@ -29,6 +29,8 @@ window.addEventListener("online",async()=>{ if(store){ await store.retry(); refr
   store=await pickStore();
   store.onChange=()=>{ updPendientes(); if(vistaActual==="hist") renderHistorial(); };
   store.onResult=(op,res)=>{ if(!res) return; // resultados que llegan más tarde (cola que se vacía sola)
+    if(op.action==="deleteSession"){ delete data.sessions[op.data.id]; return; }
+    if(res.session && (!data.sessions[res.session.id] || store.pending().some(o=>o.key==="d:"+res.session.id))) return; // ya borrada aquí
     if(res.session) data.sessions[res.session.id]=res.session; if(res.pagos) data.pagos[res.pagos.month]={month:res.pagos.month,rows:res.pagos.rows}; if(res.person) data.persons[res.person.id]=res.person; };
   const cache=store.cached();
   if(cache){ data=cache; store.pending().forEach(op=>aplicarOp(data,op)); setDate(todayISO()); shownDay=todayISO(); updPendientes(); }

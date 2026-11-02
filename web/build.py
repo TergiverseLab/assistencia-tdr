@@ -9,7 +9,7 @@ sheet = sys.argv[2] if len(sys.argv)>2 else ""
 css = (SRC/"style.css").read_text().replace("{{TDR_BLACK}}", b64("tdr_black.png")).replace("{{LF_BLACK}}", b64("lf_black.png"))
 page = (SRC/"page.html").read_text()
 import datetime
-ver = datetime.datetime.now().strftime("%d/%m %H:%M")
+ver = datetime.datetime.now().strftime("%d/%m %H:%M:%S")
 mods = sorted((SRC/"app").glob("*.js"))  # módulos de la página, en orden: 1_base, 2_lista, …
 js = (SRC/"store.js").read_text().replace("{{SHEET_URL}}", sheet) + "\n(function(){\n" + "\n".join(m.read_text() for m in mods).replace("{{VERSION}}", ver) + "\n})();\n"
 head = ('<title>Assistència Teatre dels Records</title>\n<meta name="claude:viewport-fit-sides" content="cover">\n'

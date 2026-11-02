@@ -69,13 +69,16 @@ $("l-all").addEventListener("click",()=>{ const on=!todasMarcadas(); $("l-roster
 $("l-clear").addEventListener("click",()=>{ $("l-roster").querySelectorAll("input").forEach(c=>{c.checked=false;c.parentElement.classList.remove("on");}); $("l-others").value=""; updCount(); saveDraft(); setStatus("l-status",""); });
 
 function setDate(iso, sid){
+  document.querySelectorAll("#view-lista .confirm").forEach(c=>{ c.remove(); }); ["l-lockrow","l-acciones"].forEach(id=>{ if($(id)) $(id).hidden=false; });
   $("l-date").value=iso; const d=new Date(iso+"T12:00:00");
   $("l-dayname").innerHTML=`<span>${esc(DIAS[d.getDay()]||"")} ${esc(fmt(iso))}</span><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>`;
   const found=sessionsOn(iso); const grouped=found.filter(k=>data.sessions[k].group);
   curSessionId = (sid && data.sessions[sid]) ? sid : (found.length ? found[0] : null);
   $("l-grouprow").hidden=grouped.length===0;
   if(grouped.length){ $("l-group").innerHTML=grouped.map(k=>`<option value="${esc(k)}">grup ${esc(sesGroup(k))}</option>`).join(""); $("l-group").value=curSessionId; }
-  renderRoster(); loadSession(curSessionId); applySesLock(); if(!isSesLocked(curSessionId)) applyDraft();
+  renderRoster(); loadSession(curSessionId);
+  if(curSessionId && isSesLocked(curSessionId) && readDraft()) abiertos.add("s:"+curSessionId);   // había cambios a medias: se sigue corrigiendo
+  applySesLock(); if(!isSesLocked(curSessionId)) applyDraft();
 }
 function loadSession(id){
   const s=id?data.sessions[id]:null;
@@ -142,7 +145,7 @@ async function saveSession(){
     const res=await store.send(op);
     if(res.encola){ if(sigue()) lineaGuardada("cola"); }
     else {
-      if(res.session){ data.sessions[sid]=res.session; const extra=res.session.present.length-ahora.length;
+      if(res.session && data.sessions[sid] && !store.pending().some(o=>o.key==="d:"+sid)){ data.sessions[sid]=res.session; const extra=res.session.present.length-ahora.length;
         if(sigue()){ baseSes={id:sid, present:res.session.present.slice(), others:(res.session.others||[]).slice()}; marcar(res.session.present,res.session.others);
           if(extra>0) setStatus("l-status",`Se han sumado ${extra} ${extra===1?"persona marcada":"personas marcadas"} desde otro móvil.`,"ok"); } }
       if(sigue()) lineaGuardada();

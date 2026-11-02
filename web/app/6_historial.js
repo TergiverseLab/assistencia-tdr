@@ -20,7 +20,7 @@ function renderHistorial(){
   const box=$("h-list"); box.innerHTML="";
   const pend=store?store.pending():[];
   if(pend.length){
-    const h=document.createElement("h3"); h.className="hday warn"; h.textContent=textoEspera(); box.append(h);
+    const h=document.createElement("h3"); h.className="hday warn"; h.textContent = store.motivo && !store.enviando() ? textoEspera() : "Subiendo a la hoja…"; box.append(h);
     pend.forEach(op=>{ const li=document.createElement("div"); li.className="hitem pend"; const e=textoPendiente(op); const e2=typeof e==="string"?{titulo:"",det:[e]}:e;
       li.innerHTML=`<span class="ht">${esc(hora(op.t).split(" a las ")[1]||"")}</span><span class="hx">${e2.titulo?`<b>${esc(e2.titulo)}</b>`:""}${e2.det.map(x=>`<span class="hd">${esc(x)}</span>`).join("")}</span>`; box.append(li); });
   }

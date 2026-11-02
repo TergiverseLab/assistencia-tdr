@@ -212,6 +212,13 @@ details.rses[open] summary{margin-bottom:6px}
 .confirm.danger{border:2.5px solid var(--fg);background:var(--soft)}
 .confirm.danger p b{font-weight:700}
 .confirm.danger .si{opacity:.8}
+
+.candado{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;vertical-align:-3px;margin-right:5px}
+#p-lockmsg{color:var(--fg)}
+
+/* quien no ha pagado, al cerrar el mes o en un mes cerrado */
+.pay.falta .name{color:var(--bad)}
+.pay.falta .name small{color:var(--bad);font-weight:600}
 </style>
 </head>
 <body>
@@ -442,13 +449,18 @@ function SheetStore(url){
   const queue=()=>{ const q=ls.get(QK); return Array.isArray(q)?q.filter(o=>o&&o.action&&o.key):[]; };
   const setQueue=q=>ls.set(QK,q);
   const st = { onResult:null, onChange:null, errors:[], ultimo:{}, motivo:null }; // motivo de la espera: "red" o "puente" (la hoja tiene el puente antiguo)
+  // fetch con tiempo límite: una conexión colgada no puede bloquear la cola para siempre
+  function fetchT(u, o, ms){ const c = new AbortController(); const t = setTimeout(()=>c.abort(), ms||25000);
+    return fetch(u, Object.assign({}, o||{}, {signal:c.signal})).finally(()=>clearTimeout(t)); }
+  // Rechazo DEFINITIVO solo si el dato está mal; cualquier otro error de Google (p. ej. "timed out") se reintenta
+  const definitivo = msg => /dato no válido|persona nueva sin nombre|contraseña/.test(msg||"");
   async function post(op){
     let r, j;
-    try { r = await fetch(url,{method:"POST",body:JSON.stringify({action:op.action,data:op.data})}); } // sin cabeceras: evita el preflight CORS
+    try { r = await fetchT(url,{method:"POST",body:JSON.stringify({action:op.action,data:op.data})}); } // sin cabeceras: evita el preflight CORS
     catch(e){ throw Object.assign(new Error("sin red"),{red:true}); }
     try { j = await r.json(); } catch(e){ throw Object.assign(new Error("respuesta no válida"),{red:true}); }
     // "acción desconocida" = el puente de la hoja aún es la versión anterior: se guarda y se reintenta más tarde
-    if (!j.ok) throw Object.assign(new Error(j.error||"error del servidor"),{red:!!j.retry || /desconocida/.test(j.error||""), puente:/desconocida/.test(j.error||"")});
+    if (!j.ok) throw Object.assign(new Error(j.error||"error del servidor"),{red:!definitivo(j.error), puente:/desconocida/.test(j.error||"")});
     return j;
   }
   let flushing = null; const leyendo = [];
@@ -479,7 +491,7 @@ function SheetStore(url){
       await flush().catch(()=>{});
       const hechas=[]; leyendo.push(hechas);
       try {
-        const r=await fetch(url+"?t="+Date.now()); const j=await r.json(); if(!j.ok) throw new Error(j.error||"error");
+        const r=await fetchT(url+"?t="+Date.now(),{},30000); const j=await r.json(); if(!j.ok) throw new Error(j.error||"error");
         const data=normalizar(j); hechas.forEach(op=>aplicarOp(data,op)); ls.set(CK,{t:Date.now(),data:JSON.parse(JSON.stringify(data))});
         queue().forEach(op=>aplicarOp(data,op)); // lo pendiente de subir se ve igualmente
         return data;
@@ -489,7 +501,9 @@ function SheetStore(url){
     // o {encola:true} si no hay red (se enviará sola). Lanza error si el puente la rechaza.
     async send(op){
       op.t = Date.now();
-      let q = queue(); const i = q.findIndex((o,k)=>o.key===op.key && (k>0 || !flushing)); // la primera puede estar enviándose
+      let q = queue();
+      if (op.action==="deleteSession"){ const sk="s:"+op.data.id; q = q.filter((o,k)=>!(o.key===sk && (k>0 || !flushing))); } // borrar: lo pendiente de esa sesión ya no se sube
+      const i = q.findIndex((o,k)=>o.key===op.key && (k>0 || !flushing)); // la primera puede estar enviándose
       if (i>=0) q[i] = fundirOps(q[i], op); else q.push(op);
       setQueue(q); if (st.onChange) st.onChange();
       await flush();
@@ -515,7 +529,7 @@ async function pickStore(){
 
 (function(){
 // ===== 1. BASE: utilidades, temporadas, navegación, botón Guardar =====
-const APP_VERSION = "03/11 00:26";
+const APP_VERSION = "03/11 00:40:51";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;          // cuota mensual habitual (septiembre fue 25)
 const $ = id => document.getElementById(id);
@@ -569,6 +583,7 @@ const views=["lista","pagos","hist","pers","res"];
 let vistaActual="lista";
 document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>show(b.dataset.view)));
 function show(v){
+  if(vistaActual==="pers" && v!=="pers"){ clauMem=""; fitxes=null; document.querySelectorAll("#n-list .ficha").forEach(f=>f.dataset.datos=""); }
   vistaActual=v;
   document.querySelectorAll(".tab").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.view===v)));
   views.forEach(k=>$("view-"+k).hidden = k!==v);
@@ -609,14 +624,14 @@ function banner(txt,cls){ const b=$("banner"); if(b.classList.contains("warn")&&
 
 // Confirmación dentro de la página (sin ventanas emergentes): sustituye una fila por la pregunta y dos botones
 // peligro=true (eliminar, dar de baja): aviso resaltado y el botón destacado es "No"
-function confirmar(fila, texto, si, alSi, peligro){
+function confirmar(fila, texto, si, alSi, peligro, alNo){
   const box=document.createElement("div"); box.className="confirm"+(peligro?" danger":""); box.setAttribute("role","alertdialog");
   box.innerHTML = peligro
     ? `<p><b>${esc(texto)}</b></p><div class="row"><button class="btn small no" type="button">No</button><button class="btn ghost small si" type="button">${esc(si)}</button></div>`
     : `<p>${esc(texto)}</p><div class="row"><button class="btn small si" type="button">${esc(si)}</button><button class="btn ghost small no" type="button">No</button></div>`;
   fila.hidden=true; fila.after(box);
   const bSi=box.querySelector(".si"), bNo=box.querySelector(".no"); const cerrar=()=>{ box.remove(); fila.hidden=false; };
-  bNo.onclick=cerrar; bSi.onclick=()=>{ cerrar(); alSi(); }; (peligro?bNo:bSi).focus();
+  bNo.onclick=()=>{ cerrar(); if(alNo) alNo(); }; bSi.onclick=()=>{ cerrar(); alSi(); }; (peligro?bNo:bSi).focus();
 }
 
 // Por qué hay cambios esperando: sin internet, o la hoja todavía tiene el puente antiguo. Lo guardado no se pierde.
@@ -709,13 +724,16 @@ $("l-all").addEventListener("click",()=>{ const on=!todasMarcadas(); $("l-roster
 $("l-clear").addEventListener("click",()=>{ $("l-roster").querySelectorAll("input").forEach(c=>{c.checked=false;c.parentElement.classList.remove("on");}); $("l-others").value=""; updCount(); saveDraft(); setStatus("l-status",""); });
 
 function setDate(iso, sid){
+  document.querySelectorAll("#view-lista .confirm").forEach(c=>{ c.remove(); }); ["l-lockrow","l-acciones"].forEach(id=>{ if($(id)) $(id).hidden=false; });
   $("l-date").value=iso; const d=new Date(iso+"T12:00:00");
   $("l-dayname").innerHTML=`<span>${esc(DIAS[d.getDay()]||"")} ${esc(fmt(iso))}</span><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>`;
   const found=sessionsOn(iso); const grouped=found.filter(k=>data.sessions[k].group);
   curSessionId = (sid && data.sessions[sid]) ? sid : (found.length ? found[0] : null);
   $("l-grouprow").hidden=grouped.length===0;
   if(grouped.length){ $("l-group").innerHTML=grouped.map(k=>`<option value="${esc(k)}">grup ${esc(sesGroup(k))}</option>`).join(""); $("l-group").value=curSessionId; }
-  renderRoster(); loadSession(curSessionId); applySesLock(); if(!isSesLocked(curSessionId)) applyDraft();
+  renderRoster(); loadSession(curSessionId);
+  if(curSessionId && isSesLocked(curSessionId) && readDraft()) abiertos.add("s:"+curSessionId);   // había cambios a medias: se sigue corrigiendo
+  applySesLock(); if(!isSesLocked(curSessionId)) applyDraft();
 }
 function loadSession(id){
   const s=id?data.sessions[id]:null;
@@ -782,7 +800,7 @@ async function saveSession(){
     const res=await store.send(op);
     if(res.encola){ if(sigue()) lineaGuardada("cola"); }
     else {
-      if(res.session){ data.sessions[sid]=res.session; const extra=res.session.present.length-ahora.length;
+      if(res.session && data.sessions[sid] && !store.pending().some(o=>o.key==="d:"+sid)){ data.sessions[sid]=res.session; const extra=res.session.present.length-ahora.length;
         if(sigue()){ baseSes={id:sid, present:res.session.present.slice(), others:(res.session.others||[]).slice()}; marcar(res.session.present,res.session.others);
           if(extra>0) setStatus("l-status",`Se han sumado ${extra} ${extra===1?"persona marcada":"personas marcadas"} desde otro móvil.`,"ok"); } }
       if(sigue()) lineaGuardada();
@@ -817,20 +835,26 @@ function payPersons(month){
 function shiftMonth(n){ const [y,m]=curMonth.split("-").map(Number); const d=new Date(y,m-1+n,1); curMonth=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; renderPagos(); }
 $("p-pick").addEventListener("change",()=>{ if(/^\d{4}-\d{2}$/.test($("p-pick").value)){ curMonth=$("p-pick").value; renderPagos(); } });
 $("p-default").addEventListener("input",()=>{ $("p-list").querySelectorAll(".tog[data-id]:not(.on)").forEach(b=>{ $("p-list").querySelector(`input[data-id="${CSS.escape(b.dataset.id)}"]`).value=defAmount(); }); updTotal(); });
-// Botón del mes: Cerrar mes (mes en curso abierto) · Reabrir mes (cerrado a mano) · Desbloquear para corregir (mes pasado) · Volver a cerrar
+// Un mes está ABIERTO (el mes en curso, hasta pulsar "Cerrar mes") o CERRADO (a mano, o ya pasado).
+// Cerrado = candado; solo se toca con "Corregir cuotas" (pide confirmación) y al guardar vuelve a quedar cerrado.
+const CANDADO='<svg class="candado" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 $("p-lock").addEventListener("click",()=>{
-  const m=curMonth, k="m:"+m, past=m<todayISO().slice(0,7);
-  if(!isLocked(m) && abiertos.has(k)){ const cerrar=()=>{ abiertos.delete(k); clearPagDraft(); renderPagos(); setStatus("p-status","Mes cerrado sin cambios.","ok"); };
-    if(pagosTocados()) confirmar($("p-lockrow"), "Hay cambios sin guardar. ¿Cerrar y descartarlos?", "Sí, descartar", cerrar); else cerrar(); return; }
-  if(!isLocked(m)){ // mes en curso abierto: cerrar en la hoja
+  const m=curMonth, k="m:"+m;
+  if(abiertos.has(k)){ // corrigiendo → cancelar
+    const cancelar=()=>{ abiertos.delete(k); clearPagDraft(); renderPagos(); setStatus("p-status","Corrección cancelada: el mes queda como estaba.","ok"); };
+    if(pagosTocados()) confirmar($("p-lockrow"), "Hay cambios sin guardar. ¿Cancelar y descartarlos?", "Sí, descartar", cancelar); else cancelar(); return; }
+  if(!isLocked(m)){
     if(pagosTocados()){ setStatus("p-status","Antes de cerrar el mes, guarda los cambios.","err"); return; }
-    confirmar($("p-lockrow"), `¿Cerrar ${monthName(m)}? Las cuotas quedarán bloqueadas también en el móvil de Emi.`, "Sí, cerrar el mes", ()=>marcarMes(m,true)); return; }
-  if(!past && mesTancat(m)){ confirmar($("p-lockrow"), `${monthName(m)} está cerrado. ¿Seguro que quieres reabrirlo?`, "Sí, reabrir", ()=>marcarMes(m,false)); return; }
-  confirmar($("p-lockrow"), "Este mes ya está cerrado. ¿Seguro que quieres modificarlo?", "Sí, modificar", ()=>{ abiertos.add(k); renderPagos(); setStatus("p-status","Mes desbloqueado: corrige y guarda. Al guardar se vuelve a cerrar.","ok"); });
+    // al ir a cerrar, quien no tiene la cuota marcada se resalta en la lista
+    const falta=[...$("p-list").querySelectorAll(".tog[data-id]:not(.on)")].map(b=>b.closest(".pay"));
+    falta.forEach(r=>r.classList.add("falta"));
+    const texto = `¿Cerrar ${monthName(m)}?`;   // quien falta por pagar ya se ve en rojo en la lista
+    confirmar($("p-lockrow"), texto, "Sí, cerrar", ()=>marcarMes(m,true), false, ()=>falta.forEach(r=>r.classList.remove("falta"))); return; }
+  confirmar($("p-lockrow"), `¿Corregir las cuotas de ${monthName(m)}?`, "Sí, corregir", ()=>{ abiertos.add(k); renderPagos(); setStatus("p-status",""); });
 });
 async function marcarMes(m,tancat){
   const op={action:"mes", key:"c:"+m, data:{month:m, tancat}}; aplicarOp(data,op); abiertos.delete("m:"+m); renderPagos();
-  try{ const res=await store.send(op); setStatus("p-status", res.encola ? textoEspera() : (tancat?`${monthName(m)} cerrado.`:`${monthName(m)} reabierto.`),"ok"); }
+  try{ const res=await store.send(op); setStatus("p-status", res.encola ? textoEspera() : (tancat?`${monthName(m)} cerrado.`:`${monthName(m)} abierto.`),"ok"); }
   catch(e){ setStatus("p-status","La hoja ha rechazado el cambio: "+e.message,"err"); refresh(); }
   updPendientes();
 }
@@ -862,14 +886,14 @@ function renderPagos(){
   const list=$("p-list"); list.innerHTML="";
   const abiertoTemp=abiertos.has("m:"+curMonth);
   $("p-lockrow").hidden = false;
-  $("p-lock").textContent = abiertoTemp ? "Volver a cerrar" : !locked ? "Cerrar mes" : (!past && mesTancat(curMonth)) ? "Reabrir mes" : "Desbloquear para corregir";
-  $("p-lockmsg").textContent = abiertoTemp ? "Abierto para corregir: al guardar se vuelve a cerrar." : !locked ? "Cuando estén apuntadas todas las cuotas." : (!past && mesTancat(curMonth)) ? "Mes cerrado." : "Mes pasado: cerrado para no tocarlo sin querer.";
+  $("p-lock").textContent = abiertoTemp ? "Cancelar corrección" : !locked ? "Cerrar mes" : "Corregir cuotas";
+  $("p-lockmsg").innerHTML = abiertoTemp ? "Corrigiendo: cambia lo que haga falta y pulsa Guardar." : locked ? `${CANDADO}<b>Mes cerrado</b>` : "";
   $("p-default").disabled = locked; $("p-defaultwrap").hidden = past || locked;
   const personas=payPersons(curMonth);
   if(!personas.length){ list.innerHTML='<p class="empty">No consta ningún pago en este mes.</p>'; }
   personas.forEach(p=>{
-    const r=rows[p.id]; const div=document.createElement("div"); div.className="pay";
-    div.innerHTML=`<div class="name">${esc(p.name)}<small>${p.active===false?"(baja) ":""}${r&&r.date?"pagado "+esc(fmt(r.date)):"pendiente"}</small></div>
+    const r=rows[p.id]; const div=document.createElement("div"); div.className="pay"+(locked && !r ? " falta" : "");   // mes cerrado: quien no pagó, resaltado
+    div.innerHTML=`<div class="name">${esc(p.name)}<small>${p.active===false?"(baja) ":""}${r&&r.date?"pagado "+esc(fmt(r.date)):locked?"sin pagar":"pendiente"}</small></div>
       <input type="number" inputmode="decimal" min="0" step="1" value="${esc(r?r.amount:defAmount())}" class="${r?"":"dim"}" aria-label="Importe ${esc(p.name)}" data-id="${esc(p.id)}" ${locked?"disabled":""}>
       <button class="tog ${r?"on":""}" type="button" data-id="${esc(p.id)}" aria-pressed="${!!r}" aria-label="Pagado ${esc(p.name)}" ${locked?"disabled":""}>${r?"✓":"○"}</button>`;
     list.append(div);
@@ -1169,7 +1193,7 @@ function renderHistorial(){
   const box=$("h-list"); box.innerHTML="";
   const pend=store?store.pending():[];
   if(pend.length){
-    const h=document.createElement("h3"); h.className="hday warn"; h.textContent=textoEspera(); box.append(h);
+    const h=document.createElement("h3"); h.className="hday warn"; h.textContent = store.motivo && !store.enviando() ? textoEspera() : "Subiendo a la hoja…"; box.append(h);
     pend.forEach(op=>{ const li=document.createElement("div"); li.className="hitem pend"; const e=textoPendiente(op); const e2=typeof e==="string"?{titulo:"",det:[e]}:e;
       li.innerHTML=`<span class="ht">${esc(hora(op.t).split(" a las ")[1]||"")}</span><span class="hx">${e2.titulo?`<b>${esc(e2.titulo)}</b>`:""}${e2.det.map(x=>`<span class="hd">${esc(x)}</span>`).join("")}</span>`; box.append(li); });
   }
@@ -1265,6 +1289,8 @@ window.addEventListener("online",async()=>{ if(store){ await store.retry(); refr
   store=await pickStore();
   store.onChange=()=>{ updPendientes(); if(vistaActual==="hist") renderHistorial(); };
   store.onResult=(op,res)=>{ if(!res) return; // resultados que llegan más tarde (cola que se vacía sola)
+    if(op.action==="deleteSession"){ delete data.sessions[op.data.id]; return; }
+    if(res.session && (!data.sessions[res.session.id] || store.pending().some(o=>o.key==="d:"+res.session.id))) return; // ya borrada aquí
     if(res.session) data.sessions[res.session.id]=res.session; if(res.pagos) data.pagos[res.pagos.month]={month:res.pagos.month,rows:res.pagos.rows}; if(res.person) data.persons[res.person.id]=res.person; };
   const cache=store.cached();
   if(cache){ data=cache; store.pending().forEach(op=>aplicarOp(data,op)); setDate(todayISO()); shownDay=todayISO(); updPendientes(); }

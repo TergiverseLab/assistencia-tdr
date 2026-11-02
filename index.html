@@ -389,7 +389,7 @@ async function pickStore(){
 
 // ===== LÓGICA DE LA PÁGINA =====
 (function(){
-const APP_VERSION = "02/11 22:52";
+const APP_VERSION = "02/11 22:54";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;           // cuota mensual habitual (septiembre fue 25)
 const defAmount = () => Number($("p-default").value)||DEFAULT_AMOUNT;
@@ -411,12 +411,15 @@ function activePersons(){ return Object.values(data.persons).filter(p=>p.active!
 // En pagos: las activas y, además, quien tenga un pago registrado ese mes aunque ya esté de baja (para que el histórico se vea).
 function payPersons(month){
   const rows=(data.pagos[month]||{rows:{}}).rows||{}; const thisM=todayISO().slice(0,7);
-  const ids = month<thisM ? new Set(Object.keys(rows)) : new Set(activePersons().map(p=>p.id).concat(Object.keys(rows)));
+  const ids = (month<thisM && isLocked(month)) ? new Set(Object.keys(rows)) : new Set(activePersons().map(p=>p.id).concat(Object.keys(rows)));
   return [...ids].map(id=>data.persons[id]||{id,name:id,active:false}).sort((a,b)=>a.name.localeCompare(b.name,"es"));
 }
 // Regla de bloqueo: lo pasado está cerrado. Para corregir hay que desbloquear; al guardar se vuelve a cerrar.
-const isLocked = month => { const d=data.pagos[month]; if(d&&d.unlocked) return false; return !!(d&&d.locked) || month<todayISO().slice(0,7); };
-const isSesLocked = sid => { const s=sid?data.sessions[sid]:null; if(!s) return false; if(s.unlocked) return false; return !!s.locked || (s.date||sid)<todayISO(); };
+// Bloqueo: los meses y sesiones pasados se ven cerrados. "Desbloquear para corregir" abre SOLO en este móvil y
+// al instante (no escribe en la hoja); al guardar se vuelve a cerrar.
+const abiertos=new Set();
+const isLocked = month => !abiertos.has("m:"+month) && month<todayISO().slice(0,7);
+const isSesLocked = sid => { const s=sid?data.sessions[sid]:null; if(!s) return false; return !abiertos.has("s:"+sid) && (s.date||sid)<todayISO(); };
 const shortName = n => { const t=n.split(" "); return (t[0].length<=2||t[0].endsWith(".")) && t[1] ? t[0]+" "+t[1] : t[0]; };
 function setStatus(id,txt,cls){ const el=$(id); el.textContent=txt; el.className=id==="banner"?"banner"+(cls?" "+cls:""):"status"+(cls?" "+cls:""); }
 function banner(txt,cls){ const b=$("banner"); b.hidden=!txt; setStatus("banner",txt||"",cls); }
@@ -509,16 +512,16 @@ function setDate(iso, sid){
 }
 function applySesLock(){
   const sid=curSessionId; const has=!!(sid&&data.sessions[sid]); const locked=isSesLocked(sid);
-  $("l-lockrow").hidden=!has; $("l-lock").textContent = locked ? "Desbloquear para corregir" : "Cerrar sesión";
-  $("l-info").textContent = has ? (locked ? "Sesión cerrada." : "Sesión abierta para corregir: al guardar se cierra sola.") : "";
+  const past = has && (data.sessions[sid].date||sid) < todayISO();
+  $("l-lockrow").hidden=!past; $("l-lock").textContent = locked ? "Desbloquear para corregir" : "Volver a cerrar";
+  $("l-info").textContent = past ? (locked ? "Sesión pasada: cerrada para no tocarla sin querer." : "Abierta para corregir: al guardar se cierra sola.") : "";
   $("l-roster").querySelectorAll("input").forEach(c=>c.disabled=locked); $("l-others").disabled=locked; $("l-all").disabled=locked; $("l-clear").disabled=locked;
   if(!$("view-lista").hidden) $("save").disabled=locked;
 }
-$("l-lock").addEventListener("click",async()=>{
-  const s=data.sessions[curSessionId]; if(!s) return; const nowLocked=isSesLocked(curSessionId);
-  const doc={...s,id:curSessionId,locked:!nowLocked,unlocked:nowLocked,savedAt:new Date().toISOString()};
-  $("l-lock").disabled=true; try{ await store.saveSession(doc); data.sessions[curSessionId]=doc; }catch(e){ if(e.queued) data.sessions[curSessionId]=doc; }
-  $("l-lock").disabled=false; applySesLock(); setStatus("l-status", nowLocked?"Sesión desbloqueada: corrige y guarda.":"Sesión cerrada.","ok");
+$("l-lock").addEventListener("click",()=>{
+  if(!curSessionId) return; const k="s:"+curSessionId; const era=isSesLocked(curSessionId);
+  if(era) abiertos.add(k); else abiertos.delete(k);
+  applySesLock(); setStatus("l-status", era?"Sesión desbloqueada: corrige y guarda.":"Sesión cerrada sin cambios.","ok");
 });
 $("l-group").addEventListener("change",()=>{ curSessionId=$("l-group").value; renderRoster(); loadSession(curSessionId); applySesLock(); if(!isSesLocked(curSessionId)) applyDraft(); });
 // ‹ › : salta a la sesión registrada anterior/siguiente (cualquier día de la semana). Si no hay más, al miércoles anterior/siguiente.
@@ -547,6 +550,7 @@ async function saveSession(){
   const doc={id:sid,date:id,present:checked(),others:others(),nuevas:others().length,locked:id<todayISO(),unlocked:false,savedAt:new Date().toISOString()}; if(prev.group) doc.group=prev.group; // al corregir a mano deja de ser estimada
   $("save").disabled=true; setStatus("l-status","Guardando…");
   $("save").disabled=false;
+  abiertos.delete("s:"+sid);
   try{ await store.saveSession(doc); data.sessions[sid]=doc; curSessionId=sid; clearDraft(); setStatus("l-status",`Guardada: ${fmt(id)}${doc.group?" · grup "+doc.group:""}, ${doc.present.length+doc.others.length} asistentes.`,"ok"); flashSaved("Sesión guardada ✓"); }
   catch(e){ data.sessions[sid]=doc; if(e.queued) clearDraft(); setStatus("l-status", e.queued ? "Sin conexión: guardada en el móvil, se enviará al recuperar la red." : "No se ha podido guardar. Inténtalo de nuevo.", e.queued?"ok":"err"); if(e.queued) flashSaved("Guardada en el móvil ✓"); else flashSaved("No se ha guardado","err"); }
   applySesLock();
@@ -556,19 +560,19 @@ async function saveSession(){
 function shiftMonth(n){ const [y,m]=curMonth.split("-").map(Number); const d=new Date(y,m-1+n,1); curMonth=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; renderPagos(); }
 $("p-pick").addEventListener("change",()=>{ if(/^\d{4}-\d{2}$/.test($("p-pick").value)){ curMonth=$("p-pick").value; renderPagos(); } });
 $("p-default").addEventListener("input",()=>{ $("p-list").querySelectorAll(".tog[data-id]:not(.on)").forEach(b=>{ $("p-list").querySelector(`input[data-id="${b.dataset.id}"]`).value=defAmount(); }); updTotal(); });
-$("p-lock").addEventListener("click",async()=>{
-  const cur=data.pagos[curMonth]||{month:curMonth,rows:{}}; const nowLocked=isLocked(curMonth); const doc={...cur,locked:nowLocked?false:true,unlocked:nowLocked?true:false,savedAt:new Date().toISOString()};
-  $("p-lock").disabled=true; try{ await store.savePago(doc); data.pagos[curMonth]=doc; }catch(e){ if(e.queued) data.pagos[curMonth]=doc; }
-  $("p-lock").disabled=false; renderPagos(); setStatus("p-status", doc.locked?"Mes cerrado.":"Mes desbloqueado: ya puedes corregir y guardar.","ok");
+$("p-lock").addEventListener("click",()=>{
+  const k="m:"+curMonth; const era=isLocked(curMonth);
+  if(era) abiertos.add(k); else abiertos.delete(k);
+  renderPagos(); setStatus("p-status", era?"Mes desbloqueado: ya puedes corregir y guardar.":"Mes cerrado sin cambios.","ok");
 });
 $("p-prev").addEventListener("click",()=>shiftMonth(-1)); $("p-next").addEventListener("click",()=>shiftMonth(1));
 function renderPagos(){
   $("p-month").textContent=monthName(curMonth); $("p-pick").value=curMonth;
   const rows=(data.pagos[curMonth]||{rows:{}}).rows||{}; const thisM=todayISO().slice(0,7); const past=curMonth<thisM; const locked=isLocked(curMonth);
   const list=$("p-list"); list.innerHTML="";
-  $("p-lockrow").hidden = !past && !data.pagos[curMonth];
-  $("p-lock").textContent = locked ? "Desbloquear para corregir" : (past ? "Volver a cerrar" : "Cerrar mes");
-  $("p-lockmsg").textContent = locked ? "Mes cerrado." : (past ? "Mes abierto para corregir: al guardar se cierra solo." : "");
+  $("p-lockrow").hidden = !past;
+  $("p-lock").textContent = locked ? "Desbloquear para corregir" : "Volver a cerrar";
+  $("p-lockmsg").textContent = locked ? "Mes pasado: está cerrado para no tocarlo sin querer." : "Mes abierto para corregir: al guardar se cierra solo.";
   $("p-default").disabled = locked; $("p-defaultwrap").hidden = past;
   if(past && !Object.keys(rows).length){ list.innerHTML='<p class="empty">No consta ningún pago en este mes.</p>'; }
   payPersons(curMonth).forEach(p=>{
@@ -600,7 +604,7 @@ function collectPagos(){
 }
 function updTotal(){ const r=collectPagos().rows; let t=Object.values(r).reduce((a,x)=>a+x.amount,0); let ns=0; $("p-list").querySelectorAll(".tog.on[data-socid]").forEach(b=>{ ns++; t+=Number($("p-list").querySelector(`input[data-socid="${b.dataset.socid}"]`).value)||0; }); $("p-total").textContent=`${Object.keys(r).length} pagos${ns?` + ${ns} socia`:""} · ${t} €`; }
 async function savePagos(){
-  const doc=collectPagos(); $("save").disabled=true; setStatus("p-status","Guardando…");
+  const doc=collectPagos(); abiertos.delete("m:"+curMonth); $("save").disabled=true; setStatus("p-status","Guardando…");
   let msg="",cls="ok";
   const socs=[...$("p-list").querySelectorAll(".tog.on[data-socid]")].map(b=>({id:b.dataset.socid,amount:Number($("p-list").querySelector(`input[data-socid="${b.dataset.socid}"]`).value)||SOCIA_AMOUNT}));
   try{ await store.savePago(doc); data.pagos[curMonth]=doc; dirtyPagos=false; msg=`Guardado ${monthName(curMonth)}: ${Object.keys(doc.rows).length} pagos.`;

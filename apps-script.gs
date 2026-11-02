@@ -1,18 +1,20 @@
 // Puente entre la página "Assistència Teatre dels Records" y esta hoja de cálculo.
 // Se pega en Extensiones > Apps Script de la hoja y se publica como "Aplicación web".
-// Tres pestañas, creadas solas la primera vez: Persones, Sessions, Pagaments.
+// Pestañas de DATOS (las escribe la web, no se tocan a mano): "dades · Persones", "dades · Sessions",
+// "dades · Pagaments", "dades · Config". Pestañas PARA MIRAR: las genera actualitzarVistes() (ver más abajo).
 
 const SHEETS = {
-  persons:  ["Persones",  ["id","nom","activa","des de","fins","sòcia (JSON)","actualitzat"]],
-  sessions: ["Sessions",  ["id","data","grup","assistents (ids)","altres","noves","total","actualitzat"]],
-  pagos:    ["Pagaments", ["mes","persona (id)","import","data pagament","actualitzat"]],
-  settings: ["Config",    ["clau","valor","actualitzat"]],
+  persons:  ["dades · Persones",  ["id","nom","activa","des de","fins","sòcia (JSON)","actualitzat"], "Persones"],
+  sessions: ["dades · Sessions",  ["id","data","grup","assistents (ids)","altres","noves","total","actualitzat"], "Sessions"],
+  pagos:    ["dades · Pagaments", ["mes","persona (id)","import","data pagament","actualitzat"], "Pagaments"],
+  settings: ["dades · Config",    ["clau","valor","actualitzat"], "Config"],
 };
 
 function sheet(key){
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const [name, header] = SHEETS[key];
+  const [name, header, old] = SHEETS[key];
   let sh = ss.getSheetByName(name);
+  if (!sh && old){ const o = ss.getSheetByName(old); if (o && String(o.getRange(1,1).getValue()) === header[0]){ o.setName(name); sh = o; } } // nombre antiguo
   if (!sh){ sh = ss.insertSheet(name); sh.appendRow(header); sh.setFrozenRows(1); }
   if (key === "sessions") sh.getRange(1, 1, sh.getMaxRows(), 1).setNumberFormat("@"); // ids como texto, no fechas
   return sh;
@@ -61,6 +63,7 @@ function doPost(e){
     }
     else if (body.action === "settings"){ Object.keys(d||{}).forEach(k => upsert("settings", [0], [k, JSON.stringify(d[k]), now])); }
     else return out({ok:false, error:"acción desconocida"});
+    PropertiesService.getScriptProperties().setProperty("vistesPendents", "1"); // las vistas se rehacen solas en <10 min
     return out({ok:true});
   }catch(err){ return out({ok:false, error:String(err)}); }
   finally{ lock.releaseLock(); }
@@ -84,4 +87,335 @@ function importarHistorico(){
   HIST_PERSONS.forEach(p => upsert("persons", [0], [p[0], p[1], p[2], p[3], p[4], "{}", now]));
   HIST_PAGOS.forEach(r => upsert("pagos", [0,1], [r[0], r[1], r[2], r[3], now]));
   Logger.log("Histórico importado: " + (HIST_PERSONS.length+HIST_T1_PERSONS.length) + " personas, " + HIST_PAGOS.length + " pagos y " + HIST_T1_SESSIONS.length + " sesiones de la T1 y " + HIST_T23_SESSIONS.length + " de la T2-T3.");
+}
+
+// ===================== VISTES · 1. CÀLCULS (sin tocar la hoja) =====================
+// Todo lo que se ve en las pestañas para mirar sale de aquí. Funciones puras: reciben filas y devuelven tablas.
+
+const WEB_URL  = "https://tergiverselab.github.io/assistencia-tdr/";
+const LOGO_URL = "https://tergiverselab.github.io/assistencia-tdr/icons/icon-512.png";
+const LLISTES_DIGITALS_DES_DE = "2026-11-04";  // desde aquí, cada sesión tiene lista real hecha con la web
+const FALTES_ESTIMADES = 1.5;                   // T2-T3 sin lista: inscritas − 1,5 (nunca faltan más de 3; criterio de Mario, 2/11/2026)
+const HORES_SESSIO = 2;
+const TEMPORADES = [
+  {id:"T1", periode:"oct.–des. 2025",     ini:"2025-10-01", fi:"2026-01-31", finan:"Ajuntament de Malgrat (contracte menor)"},
+  {id:"T2", periode:"febr.–juny 2026",    ini:"2026-02-01", fi:"2026-08-31", finan:"Quotes de les participants"},
+  {id:"T3", periode:"set. 2026 – juny 2027", ini:"2026-09-01", fi:"2027-08-31", finan:"Quotes de les participants"},
+];
+const PECES = [
+  ["T1", "Off the Record", "Tour sonor de records pels carrers de Malgrat", "2025-12-21", "Centre Cultural i carrers de Malgrat"],
+  ["T2", "The Divas",      "Gala de projecció de 9 videoclips",              "2026-06-10", "Centre Cultural"],
+  ["T2", "(T)ACTOS",       "Performance d'escriptura en viu",               "2026-06-26", "Malgrat amb Orgull · Centre Cultural"],
+];
+const DIES = ["", "dl", "dt", "dc", "dj", "dv", "ds", "dg"];
+const MESOS = ["gen.", "febr.", "març", "abr.", "maig", "juny", "jul.", "ag.", "set.", "oct.", "nov.", "des."];
+
+function dm(d){ return d.slice(8,10) + "/" + d.slice(5,7); }
+function dmy(d){ return d ? d.slice(8,10) + "/" + d.slice(5,7) + "/" + d.slice(0,4) : ""; }
+function nomMes(m){ return m ? MESOS[Number(m.slice(5,7))-1] + " " + m.slice(0,4) : ""; }
+function diaSetmana(d){ const x = new Date(Date.UTC(+d.slice(0,4), +d.slice(5,7)-1, +d.slice(8,10))); return DIES[x.getUTCDay() || 7]; }
+function llistaIds(v){ return String(v==null?"":v).split(",").map(s=>s.trim()).filter(Boolean); }
+function num1(x){ return Math.round(x*10)/10; }
+
+// filas crudas de las pestañas de datos -> modelo limpio
+function construirModel(rowsP, rowsS, rowsG, avui){
+  const persons = {};
+  rowsP.filter(r=>r[0]).forEach(r=>{ let socia={}; try{ socia = r[5] ? JSON.parse(r[5]) : {}; }catch(e){}
+    persons[String(r[0])] = {id:String(r[0]), nom:String(r[1]), activa:String(r[2]).toLowerCase()!=="no", des:fmtMonth(r[3]), fins:fmtMonth(r[4]), socia}; });
+  const sessions = rowsS.filter(r=>r[0]).map(r=>{
+    const date = fmtDate(r[1]); const present = llistaIds(r[3]); const altres = llistaIds(r[4]);
+    let font;                                   // llista = lista real · inscrites = reconstruida por cuotas · sense = sin datos
+    if (present.length + altres.length === 0) font = "sense";
+    else if (date < "2026-01-01" || date >= LLISTES_DIGITALS_DES_DE) font = "llista";
+    else font = "inscrites";
+    return {id:norm(r[0]), date, grup:String(r[2]||""), present, altres, font};
+  }).filter(s=>/^\d{4}-\d{2}-\d{2}$/.test(s.date) && s.date <= avui)
+    .sort((a,b)=> a.date.localeCompare(b.date) || a.grup.localeCompare(b.grup));
+  const pagos = rowsG.filter(r=>r[0] && String(r[1])!=="__tancat__").map(r=>({mes:fmtMonth(r[0]), pid:String(r[1]), imp:Number(r[2])||0}));
+  return {persons, sessions, pagos, avui};
+}
+
+function nomDe(m, pid){ return (m.persons[pid] || {nom:pid}).nom; }
+
+// cifras de una temporada
+function estadistiques(t, m){
+  const ses = m.sessions.filter(s=>s.date>=t.ini && s.date<=t.fi);
+  const pag = m.pagos.filter(p=>p.mes>=t.ini.slice(0,7) && p.mes<=t.fi.slice(0,7));
+  const gent = new Set(); ses.forEach(s=>s.present.forEach(p=>gent.add(p))); pag.forEach(p=>gent.add(p.pid));
+  const perMes = {}; pag.forEach(p=>{ perMes[p.mes] = (perMes[p.mes]||0) + 1; });
+  const llista = ses.filter(s=>s.font==="llista");
+  const inscr  = ses.filter(s=>s.font==="inscrites");
+  const assist = s => s.present.length + s.altres.length;
+  const mitjMesurada = llista.length ? llista.reduce((a,s)=>a+assist(s),0)/llista.length : null;
+  const mitjEstimada = inscr.length ? inscr.reduce((a,s)=>a+Math.max(0,assist(s)-FALTES_ESTIMADES),0)/inscr.length : null;
+  // media global: real donde hay lista, estimada donde no
+  const parts = []; llista.forEach(s=>parts.push(assist(s))); inscr.forEach(s=>parts.push(Math.max(0,assist(s)-FALTES_ESTIMADES)));
+  const mitjana = parts.length ? parts.reduce((a,b)=>a+b,0)/parts.length : null;
+  const tipus = !parts.length ? "" : !inscr.length ? "mesurada" : !llista.length ? "estimada" : "mesurada i estimada";
+  const ins = Object.values(perMes);
+  return {t, ses, pag, gent, perMes, llista, inscr, mitjMesurada, mitjEstimada, mitjana, tipus,
+          hores: ses.length*HORES_SESSIO, insMin: ins.length?Math.min(...ins):null, insMax: ins.length?Math.max(...ins):null};
+}
+
+function fraseDocument(st){
+  let f = `${st.t.id} (${st.t.periode}): ${st.ses.length} sessions (${st.hores} h), ${st.gent.size} participants`;
+  if (st.mitjana != null) f += `, assistència mitjana d'unes ${Math.round(st.mitjana)} persones per sessió`;
+  if (st.insMin != null) f += `, grup estable d'entre ${st.insMin} i ${st.insMax} persones inscrites cada mes`;
+  return f + ".";
+}
+
+// cuadrícula de asistencia: devuelve valores y tipo de cada columna
+function graellaAssistencia(st, m){
+  const ses = st.ses.slice().sort((a,b)=> (a.grup?0:1)-(b.grup?0:1) || a.grup.localeCompare(b.grup) || a.date.localeCompare(b.date)); // T1: matí, tarda, sin grupo
+  const grupDe = {}; ses.forEach(s=>s.present.forEach(p=>{ grupDe[p] = grupDe[p] || {}; grupDe[p][s.grup||"~"] = (grupDe[p][s.grup||"~"]||0)+1; }));
+  const principal = p => { const g = grupDe[p]; if(!g) return "~"; return Object.keys(g).sort((a,b)=>g[b]-g[a])[0]; };
+  const ordre = g => g==="~" ? "zzz" : g;
+  const pids = [...st.gent].sort((a,b)=> ordre(principal(a)) < ordre(principal(b)) ? -1 : ordre(principal(a)) > ordre(principal(b)) ? 1 : nomDe(m,a).localeCompare(nomDe(m,b),"ca"));
+  const files = pids.map(pid=>{
+    const cel = ses.map(s=> s.present.includes(pid) ? (s.font==="llista" ? "✓" : "·") : "");
+    return [nomDe(m,pid), ...cel, cel.filter(c=>c==="✓").length || ""];
+  });
+  const totals = ["Assistents", ...ses.map(s=> s.font==="llista" ? s.present.length+s.altres.length : s.font==="inscrites" ? Math.round(Math.max(0,s.present.length+s.altres.length-FALTES_ESTIMADES)) : ""), ""];
+  const provar = ses.some(s=>s.altres.length) ? ["Venen a provar", ...ses.map(s=>s.altres.length||""), ""] : null;
+  return {ses, files, totals, provar,
+          cap1: ["", ...ses.map(s=> diaSetmana(s.date) + (s.grup ? " · "+s.grup : "")), ""],
+          cap2: ["Participant", ...ses.map(s=>dm(s.date)), "Sessions"]};
+}
+
+// cuadrícula de cuotas
+function graellaQuotes(st, m){
+  const mesos = new Set(Object.keys(st.perMes)); st.ses.forEach(s=>mesos.add(s.date.slice(0,7)));
+  const ms = [...mesos].sort();
+  const pids = [...new Set(st.pag.map(p=>p.pid))].sort((a,b)=>nomDe(m,a).localeCompare(nomDe(m,b),"ca"));
+  const files = pids.map(pid=>{ const cel = ms.map(mm=>{ const p = st.pag.find(x=>x.pid===pid && x.mes===mm); return p ? p.imp : ""; });
+    return [nomDe(m,pid), ...cel, cel.reduce((a,b)=>a+(Number(b)||0),0)]; });
+  const total = ["Total del mes", ...ms.map(mm=> st.perMes[mm] ? st.pag.filter(p=>p.mes===mm).reduce((a,p)=>a+p.imp,0) : (mm < m.avui.slice(0,7) ? "sense registre" : "")), st.pag.reduce((a,p)=>a+p.imp,0)];
+  const persones = ["Persones que paguen", ...ms.map(mm=>st.perMes[mm]||""), ""];
+  return {ms, files, total, persones, cap: ["Participant", ...ms.map(nomMes), "Total"]};
+}
+
+// tabla de participantes
+function taulaParticipants(m, sts){
+  const pids = new Set(Object.keys(m.persons)); sts.forEach(st=>st.gent.forEach(p=>pids.add(p)));
+  const llista = [...pids].map(pid=>{
+    const p = m.persons[pid] || {id:pid, nom:pid, activa:false, des:"", fins:"", socia:{}};
+    const ses = m.sessions.filter(s=>s.font==="llista" && s.present.includes(pid)).length;
+    const pg = m.pagos.filter(x=>x.pid===pid);
+    const soc = Object.keys(p.socia||{}).sort().join(", ");
+    return [p.nom, p.activa ? "activa" : "baixa", nomMes(p.des), p.activa ? "" : nomMes(p.fins),
+            ...sts.map(st=>st.gent.has(pid) ? "✓" : ""), ses || "", pg.length || "", pg.reduce((a,x)=>a+x.imp,0) || "", soc];
+  });
+  llista.sort((a,b)=> (a[1]===b[1] ? 0 : a[1]==="activa" ? -1 : 1) || String(a[0]).localeCompare(String(b[0]),"ca"));
+  return {cap: ["Participant", "Estat", "Des de", "Fins", ...sts.map(st=>st.t.id), "Sessions amb llista", "Mesos pagats", "Total pagat", "Sòcia"], files: llista};
+}
+
+// ===================== VISTES · 2. DIBUJO DE LAS PESTAÑAS =====================
+// actualitzarVistes() rehace todas las pestañas para mirar a partir de las pestañas de datos.
+
+const COL = {negre:"#111111", gris:"#6b6b6b", gris2:"#9a9a9a", linia:"#dcdcdc", suau:"#f3f3f3", marca:"#e4e4e4", blanc:"#ffffff"};
+const FONT_TITOL = "Josefin Sans";
+const ORDRE_VISTES = ["Inici", "Participants", "Assistència T1", "Assistència T2", "Assistència T3", "Quotes T2", "Quotes T3"];
+
+function vista(nom){
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(nom);
+  if (!sh) sh = ss.insertSheet(nom);
+  else {
+    sh.getImages().forEach(i=>i.remove());
+    sh.setFrozenRows(0); sh.setFrozenColumns(0);
+    const r = sh.getRange(1,1,sh.getMaxRows(),sh.getMaxColumns()); r.breakApart(); sh.clear(); sh.setConditionalFormatRules([]);
+  }
+  sh.setHiddenGridlines(true); sh.setTabColor(COL.negre);
+  return sh;
+}
+function titol(sh, text, sub){
+  sh.getRange(1,1).setValue(text).setFontFamily(FONT_TITOL).setFontSize(16).setFontWeight("bold");
+  if (sub) sh.getRange(2,1).setValue(sub).setFontColor(COL.gris).setFontSize(10);
+}
+function capcalera(rang){ rang.setBackground(COL.negre).setFontColor(COL.blanc).setFontWeight("bold").setFontSize(9).setHorizontalAlignment("center").setVerticalAlignment("middle"); }
+function seccio(sh, fila, text){ sh.getRange(fila,2).setValue(text.toUpperCase()).setFontFamily(FONT_TITOL).setFontWeight("bold").setFontSize(11).setFontColor(COL.negre); }
+
+// ---------- Inici ----------
+function vistaInici(m, sts){
+  const sh = vista("Inici");
+  sh.setColumnWidth(1, 120); [2,3,4,5,6,7,8,9,10].forEach(c=>sh.setColumnWidth(c, c===3||c===4 ? 170 : 105));
+  try { const img = sh.insertImage(LOGO_URL, 1, 1); img.setWidth(96).setHeight(96); } catch(e) {}
+  sh.getRange(1,2).setValue("TEATRE DELS RECORDS").setFontFamily(FONT_TITOL).setFontSize(22).setFontWeight("bold");
+  sh.getRange(2,2).setValue("Assistència i quotes · Malgrat de Mar").setFontSize(11).setFontColor(COL.gris);
+  sh.getRange(3,2).setValue("Un projecte de l'Associació Laboratori Línia de Fuga").setFontSize(9).setFontColor(COL.gris);
+  sh.getRange(4,2).setRichTextValue(SpreadsheetApp.newRichTextValue().setText("Obrir la web per passar llista →").setLinkUrl(WEB_URL).build()).setFontSize(10);
+  sh.getRange(4,5).setValue("Actualitzat: " + Utilities.formatDate(new Date(), "Europe/Madrid", "dd/MM/yyyy HH:mm")).setFontSize(9).setFontColor(COL.gris);
+  sh.setRowHeights(1, 4, 26);
+
+  let f = 6; seccio(sh, f, "Temporades"); f++;
+  const cap = ["Temporada","Període","Finançament","Sessions","Hores","Participants","Mitjana per sessió","Inscrites per mes"];
+  const files = sts.map(st=>[st.t.id, st.t.periode, st.t.finan, st.ses.length, st.hores, st.gent.size,
+                             st.mitjana==null ? "" : num1(st.mitjana), st.insMin==null ? "" : (st.insMin===st.insMax ? st.insMin : st.insMin+"–"+st.insMax)]);
+  const totalGent = new Set(); sts.forEach(st=>st.gent.forEach(p=>totalGent.add(p)));
+  const total = ["Total", "", "", sts.reduce((a,st)=>a+st.ses.length,0), sts.reduce((a,st)=>a+st.hores,0), totalGent.size, "", ""];
+  sh.getRange(f,2,1,cap.length).setValues([cap]); capcalera(sh.getRange(f,2,1,cap.length));
+  sh.getRange(f+1,2,files.length,cap.length).setValues(files).setFontSize(10).setVerticalAlignment("middle");
+  sh.getRange(f+1,5,files.length+1,5).setHorizontalAlignment("center");
+  sh.getRange(f+1+files.length,2,1,cap.length).setValues([total]).setFontWeight("bold").setBackground(COL.suau);
+  sh.getRange(f,2,files.length+2,cap.length).setBorder(null,null,true,null,null,true,COL.linia,SpreadsheetApp.BorderStyle.SOLID);
+  f += files.length + 3;
+
+  seccio(sh, f, "Peces públiques"); f++;
+  const capP = ["Temporada","Peça","Què és","Data","Lloc"];
+  sh.getRange(f,2,1,capP.length).setValues([capP]); capcalera(sh.getRange(f,2,1,capP.length));
+  const fp = PECES.map(p=>[p[0], p[1], p[2], dmy(p[3]), p[4]]);
+  sh.getRange(f+1,2,fp.length,capP.length).setValues(fp).setFontSize(10);
+  sh.getRange(f+1,3,fp.length,1).setFontWeight("bold");
+  f += fp.length + 2;
+
+  seccio(sh, f, "Per a documents i convocatòries"); f++;
+  sts.forEach(st=>{ sh.getRange(f,2,1,8).merge().setValue(fraseDocument(st)).setFontSize(10).setWrap(true); sh.setRowHeight(f, 34); f++; });
+  f++;
+
+  seccio(sh, f, "Com llegir aquest document"); f++;
+  ["Participants: una fila per persona, amb temporades, sessions i quotes.",
+   "Assistència T1, T2, T3: ✓ = ha vingut (llista de la sessió). · = inscrita aquell mes; la sessió no té llista. Columna grisa = sessió sense dades.",
+   "Quotes T2, T3: el que ha pagat cada persona cada mes.",
+   "Les pestanyes «dades · …» (al final, en gris) les escriu la web. No s'han de tocar a mà.",
+   "Aquest document s'actualitza sol cada 10 minuts. Per forçar-ho: menú Teatre dels Records › Actualitzar ara."]
+   .forEach(t=>{ sh.getRange(f,2,1,8).merge().setValue(t).setFontSize(9).setFontColor(COL.gris).setWrap(true); f++; });
+  return sh;
+}
+
+// ---------- Participants ----------
+function vistaParticipants(m, sts){
+  const sh = vista("Participants");
+  titol(sh, "Participants", "Totes les persones que han passat pel Teatre dels Records. Les actives, primer.");
+  const t = taulaParticipants(m, sts); const f = 4; const n = t.cap.length;
+  sh.getRange(f,1,1,n).setValues([t.cap]); capcalera(sh.getRange(f,1,1,n));
+  if (t.files.length){
+    sh.getRange(f+1,1,t.files.length,n).setValues(t.files).setFontSize(10);
+    sh.getRange(f+1,2,t.files.length,n-1).setHorizontalAlignment("center");
+    sh.getRange(f+1,n-1,t.files.length,1).setNumberFormat('#,##0 "€"');
+    const bg = t.files.map(r=>Array(n).fill(r[1]==="activa" ? COL.blanc : COL.suau));
+    const fc = t.files.map(r=>Array(n).fill(r[1]==="activa" ? COL.negre : COL.gris));
+    sh.getRange(f+1,1,t.files.length,n).setBackgrounds(bg).setFontColors(fc);
+    sh.getRange(f,1,t.files.length+1,n).setBorder(null,null,true,null,null,true,COL.linia,SpreadsheetApp.BorderStyle.SOLID);
+  }
+  sh.setColumnWidth(1, 230); for (let c=2;c<=n;c++) sh.setColumnWidth(c, c<=4 ? 90 : 70);
+  sh.setColumnWidth(n-3, 110); sh.setColumnWidth(n-2, 90); sh.setColumnWidth(n-1, 90); sh.setColumnWidth(n, 90);
+  sh.setFrozenRows(f); sh.setFrozenColumns(1);
+  return sh;
+}
+
+// ---------- Assistència Tn ----------
+function vistaAssistencia(st, m){
+  const sh = vista("Assistència " + st.t.id);
+  const g = graellaAssistencia(st, m); const n = g.cap2.length;
+  const mitj = st.mitjana==null ? "" : ` · mitjana ${num1(st.mitjana)} per sessió`;
+  titol(sh, `Assistència · ${st.t.id} (${st.t.periode})`, `${st.ses.length} sessions · ${st.gent.size} participants${mitj}`);
+  sh.getRange(3,1).setValue("✓ ha vingut   ·  inscrita aquell mes (sessió sense llista)   columna grisa: sessió sense dades").setFontSize(9).setFontColor(COL.gris);
+  if (!g.ses.length){ sh.getRange(5,1).setValue("Encara no hi ha sessions en aquesta temporada."); return sh; }
+  const f = 5;
+  sh.getRange(f,1,2,n).setValues([g.cap1, g.cap2]); capcalera(sh.getRange(f,1,2,n));
+  sh.getRange(f,1,2,1).setHorizontalAlignment("left");
+  g.ses.forEach((s,i)=>{ if (s.font==="sense") sh.getRange(f,2+i,2,1).setBackground(COL.gris2); else if (s.font==="inscrites") sh.getRange(f,2+i,2,1).setBackground("#4a4a4a"); });
+  const nf = g.files.length;
+  if (nf){
+    sh.getRange(f+2,1,nf,n).setValues(g.files).setFontSize(10);
+    sh.getRange(f+2,2,nf,n-1).setHorizontalAlignment("center");
+    const bg = g.files.map(r=>r.map((c,j)=> j===0||j===n-1 ? COL.blanc : (g.ses[j-1].font==="sense" ? COL.suau : c==="✓" ? COL.marca : COL.blanc)));
+    const fc = g.files.map(r=>r.map(c=> c==="·" ? COL.gris2 : COL.negre));
+    sh.getRange(f+2,1,nf,n).setBackgrounds(bg).setFontColors(fc);
+    sh.getRange(f+2,n,nf,1).setFontWeight("bold");
+  }
+  const extra = [g.totals]; if (g.provar) extra.push(g.provar);
+  sh.getRange(f+2+nf,1,extra.length,n).setValues(extra).setFontWeight("bold").setBackground(COL.suau).setFontSize(10);
+  sh.getRange(f+2+nf,2,extra.length,n-1).setHorizontalAlignment("center");
+  sh.getRange(f,1,nf+2+extra.length,n).setBorder(true,true,true,true,true,true,COL.linia,SpreadsheetApp.BorderStyle.SOLID);
+  sh.setColumnWidth(1, 220); for (let c=2;c<n;c++) sh.setColumnWidth(c, 46); sh.setColumnWidth(n, 72);
+  sh.setFrozenRows(f+1); sh.setFrozenColumns(1);
+  return sh;
+}
+
+// ---------- Quotes Tn ----------
+function vistaQuotes(st, m){
+  const sh = vista("Quotes " + st.t.id);
+  const g = graellaQuotes(st, m); const n = g.cap.length;
+  titol(sh, `Quotes · ${st.t.id} (${st.t.periode})`, `${g.files.length} persones han pagat alguna quota · total ${g.total[n-1]} €`);
+  const f = 4;
+  sh.getRange(f,1,1,n).setValues([g.cap]); capcalera(sh.getRange(f,1,1,n)); sh.getRange(f,1).setHorizontalAlignment("left");
+  const nf = g.files.length;
+  if (nf){
+    sh.getRange(f+1,1,nf,n).setValues(g.files).setFontSize(10);
+    sh.getRange(f+1,2,nf,n-1).setHorizontalAlignment("center").setNumberFormat('#,##0 "€"');
+    sh.getRange(f+1,n,nf,1).setFontWeight("bold");
+  }
+  sh.getRange(f+1+nf,1,2,n).setValues([g.total, g.persones]).setFontWeight("bold").setBackground(COL.suau).setFontSize(10);
+  sh.getRange(f+1+nf,2,1,n-1).setHorizontalAlignment("center").setNumberFormat('#,##0 "€"');
+  sh.getRange(f+2+nf,2,1,n-1).setHorizontalAlignment("center");
+  sh.getRange(f,1,nf+3,n).setBorder(true,true,true,true,true,true,COL.linia,SpreadsheetApp.BorderStyle.SOLID);
+  sh.setColumnWidth(1, 220); for (let c=2;c<=n;c++) sh.setColumnWidth(c, 80);
+  sh.setFrozenRows(f); sh.setFrozenColumns(1);
+  return sh;
+}
+
+// ---------- Orden, datos en gris ----------
+function ordenarPestanyes(){
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let pos = 1;
+  ORDRE_VISTES.forEach(nom=>{ const sh = ss.getSheetByName(nom); if (sh){ ss.setActiveSheet(sh); ss.moveActiveSheet(pos++); } });
+  Object.keys(SHEETS).forEach(k=>{
+    const sh = sheet(k); ss.setActiveSheet(sh); ss.moveActiveSheet(ss.getNumSheets());
+    sh.setTabColor(COL.gris2);
+    if (!sh.getProtections(SpreadsheetApp.ProtectionType.SHEET).length) sh.protect().setDescription("Dades de la web: no tocar a mà").setWarningOnly(true);
+  });
+  ss.setActiveSheet(ss.getSheetByName("Inici"));
+}
+
+// ---------- Entrada principal ----------
+function actualitzarVistes(){
+  const avui = Utilities.formatDate(new Date(), "Europe/Madrid", "yyyy-MM-dd");
+  const m = construirModel(rows("persons"), rows("sessions"), rows("pagos"), avui);
+  const sts = TEMPORADES.filter(t=>t.ini <= avui).map(t=>estadistiques(t, m));
+  vistaInici(m, sts);
+  vistaParticipants(m, sts);
+  sts.forEach(st=>vistaAssistencia(st, m));
+  sts.filter(st=>st.t.id!=="T1").forEach(st=>vistaQuotes(st, m));
+  ordenarPestanyes();
+  PropertiesService.getScriptProperties().deleteProperty("vistesPendents");
+}
+
+// Lo llama el reloj cada 10 minutos: solo rehace si la web ha guardado algo
+function actualitzarSiCal(){
+  if (PropertiesService.getScriptProperties().getProperty("vistesPendents")) actualitzarVistes();
+}
+
+function onOpen(){
+  SpreadsheetApp.getUi().createMenu("Teatre dels Records").addItem("Actualitzar ara", "actualitzarVistes").addToUi();
+}
+
+// ===================== INSTAL·LACIÓ (ejecutar UNA vez) =====================
+// 1) Copia las pestañas antiguas (las de Emi) a un archivo aparte "Arxiu" y las quita de aquí.
+// 2) Borra las sesiones de prueba del 2/11 (y la del 4/11 si está vacía) y el 10/6/2026, que fue la gala
+//    The Divas (pieza pública, no sesión de taller).
+// 3) Monta las pestañas para mirar.  4) Pone el reloj de cada 10 minutos.
+function instalar(){
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const propies = ORDRE_VISTES.concat(Object.keys(SHEETS).map(k=>SHEETS[k][0]), Object.keys(SHEETS).map(k=>SHEETS[k][2]));
+  Object.keys(SHEETS).forEach(k=>sheet(k)); // renombra las de datos si tenían el nombre antiguo
+  const antigues = ss.getSheets().filter(sh=>!propies.includes(sh.getName()));
+  if (antigues.length){
+    const arxiu = SpreadsheetApp.create("Arxiu · pestanyes originals (Excel d'Emi) · Assistència i quotes TdR");
+    antigues.forEach(sh=>{ const c = sh.copyTo(arxiu); c.setName(sh.getName()); });
+    arxiu.getSheets().filter(sh=>!antigues.some(a=>a.getName()===sh.getName())).forEach(sh=>arxiu.deleteSheet(sh));
+    try { const carpeta = DriveApp.getFileById(ss.getId()).getParents().next(); DriveApp.getFileById(arxiu.getId()).moveTo(carpeta); } catch(e) {}
+    if (!ss.getSheetByName("Inici")) ss.insertSheet("Inici");  // una hoja tiene que quedar siempre
+    antigues.forEach(sh=>ss.deleteSheet(sh));
+    Logger.log("Arxivades a «" + arxiu.getName() + "»: " + antigues.map(s=>s.getName()).join(", "));
+  }
+  const shS = sheet("sessions"); const v = shS.getDataRange().getValues();
+  for (let i = v.length-1; i >= 1; i--){
+    const id = norm(v[i][0]);
+    if (id === "2026-11-02" || id === "2026-06-10" || (id === "2026-11-04" && !String(v[i][3]).trim())) shS.deleteRow(i+1);
+  }
+  actualitzarVistes();
+  ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==="actualitzarSiCal").forEach(t=>ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger("actualitzarSiCal").timeBased().everyMinutes(10).create();
+  Logger.log("Fet: vistes muntades i rellotge de 10 minuts activat.");
 }

@@ -11,8 +11,8 @@ function repintar(){
   updPendientes();
 }
 async function refresh(){
-  if(!store || refreshing || store.name==="local") return; refreshing=true;
-  try{ data=await store.load(); repintar(); }catch(e){} refreshing=false;
+  if(!store || refreshing || store.name==="local") return; refreshing=true; updPendientes();
+  try{ data=await store.load(); repintar(); }catch(e){} refreshing=false; updPendientes();
 }
 // Al volver a la página otro día (p. ej. quedó abierta en el móvil), Lista salta sola a la fecha de hoy
 let shownDay=null;
@@ -33,8 +33,9 @@ window.addEventListener("online",async()=>{ if(store){ await store.retry(); refr
   const cache=store.cached();
   if(cache){ data=cache; store.pending().forEach(op=>aplicarOp(data,op)); setDate(todayISO()); shownDay=todayISO(); updPendientes(); }
   else banner("Cargando datos…");
-  try{ data=await store.load(); banner(""); if(cache) repintar(); else { setDate(todayISO()); shownDay=todayISO(); } updPendientes(); }
-  catch(e){ if(!cache){ banner("No se han podido cargar los datos. Comprueba la conexión y recarga.","err"); setDate(todayISO()); } else updPendientes(); }
+  refreshing=true; updPendientes();
+  try{ data=await store.load(); refreshing=false; banner(""); if(cache) repintar(); else { setDate(todayISO()); shownDay=todayISO(); } updPendientes(); }
+  catch(e){ refreshing=false; updPendientes(); if(!cache){ banner("No se han podido cargar los datos. Comprueba la conexión y recarga.","err"); setDate(todayISO()); } else updPendientes(); }
   if(store.name==="local") banner("Esta copia guarda solo en este dispositivo. No está conectada a la hoja del Drive.","err");
 })();
 

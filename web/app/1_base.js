@@ -45,7 +45,8 @@ const sesAsistencia = (k, grupo) => { const v=sesAsisDirecta(k); if(v!=null) ret
 const abiertos=new Set();
 const mesTancat = month => !!(data.settings && data.settings["tancat:"+month]===true);   // cerrado a mano con "Cerrar mes"
 const isLocked = month => !abiertos.has("m:"+month) && (month<todayISO().slice(0,7) || mesTancat(month));
-const isSesLocked = sid => { const s=sid?data.sessions[sid]:null; if(!s) return false; return !abiertos.has("s:"+sid) && (s.date||sid)<todayISO(); };
+// Una sesión YA REGISTRADA (de cualquier día) queda cerrada: para cambiarla, "Corregir registro". Una nueva se marca directamente.
+const isSesLocked = sid => { const s=sid?data.sessions[sid]:null; if(!s) return false; return !abiertos.has("s:"+sid); };
 
 // ---------- navegación ----------
 const views=["lista","pagos","hist","pers","res"];
@@ -82,7 +83,7 @@ $("save").addEventListener("click",()=>{ if(guardando) return; if(vistaActual===
 // Mientras se está enviando, solo la barrita de carga de arriba ("Guardando en la hoja…").
 function updPendientes(){
   const n = store && store.pending ? store.pending().length : 0; const b=$("banner");
-  const enviando = !!(store && store.enviando && store.enviando());
+  const enviando = !!(store && store.enviando && store.enviando()) || (typeof refreshing!=="undefined" && refreshing);
   $("carga").hidden = !enviando;
   if(n && !enviando && store.motivo){ b.hidden=false; b.className="banner warn"; b.innerHTML=`${esc(textoEspera())} <button class="btn ghost small" type="button" id="b-retry">Reintentar ahora</button>`;
     $("b-retry").onclick=async()=>{ $("b-retry").disabled=true; await store.retry(); updPendientes(); }; }
@@ -91,12 +92,15 @@ function updPendientes(){
 function banner(txt,cls){ const b=$("banner"); if(b.classList.contains("warn")&&!txt) return; b.hidden=!txt; b.className="banner"+(cls?" "+cls:""); b.textContent=txt||""; }
 
 // Confirmación dentro de la página (sin ventanas emergentes): sustituye una fila por la pregunta y dos botones
-function confirmar(fila, texto, si, alSi){
-  const box=document.createElement("div"); box.className="confirm"; box.setAttribute("role","alertdialog");
-  box.innerHTML=`<p>${esc(texto)}</p><div class="row"><button class="btn small" type="button">${esc(si)}</button><button class="btn ghost small" type="button">No</button></div>`;
+// peligro=true (eliminar, dar de baja): aviso resaltado y el botón destacado es "No"
+function confirmar(fila, texto, si, alSi, peligro){
+  const box=document.createElement("div"); box.className="confirm"+(peligro?" danger":""); box.setAttribute("role","alertdialog");
+  box.innerHTML = peligro
+    ? `<p><b>${esc(texto)}</b></p><div class="row"><button class="btn small no" type="button">No</button><button class="btn ghost small si" type="button">${esc(si)}</button></div>`
+    : `<p>${esc(texto)}</p><div class="row"><button class="btn small si" type="button">${esc(si)}</button><button class="btn ghost small no" type="button">No</button></div>`;
   fila.hidden=true; fila.after(box);
-  const [bSi,bNo]=box.querySelectorAll("button"); const cerrar=()=>{ box.remove(); fila.hidden=false; };
-  bNo.onclick=cerrar; bSi.onclick=()=>{ cerrar(); alSi(); }; bSi.focus();
+  const bSi=box.querySelector(".si"), bNo=box.querySelector(".no"); const cerrar=()=>{ box.remove(); fila.hidden=false; };
+  bNo.onclick=cerrar; bSi.onclick=()=>{ cerrar(); alSi(); }; (peligro?bNo:bSi).focus();
 }
 
 // Por qué hay cambios esperando: sin internet, o la hoja todavía tiene el puente antiguo. Lo guardado no se pierde.

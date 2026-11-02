@@ -40,7 +40,8 @@ function renderPersons(){
     if(fila){ const f=document.createElement("div"); f.className="ficha"; f.dataset.pid=seguir.pid; f.dataset.datos=seguir.datos; fila.closest(".person").after(f); pintarFicha(f); } }
   list.querySelectorAll("button[data-id]").forEach(b=>b.addEventListener("click",async()=>{
     const p=data.persons[b.dataset.id]; const set = p.active===false ? {active:true, to:""} : {active:false, to:todayISO().slice(0,7)};
-    b.disabled=true; await guardarPersona(p.id,set); renderPersons(); renderRoster();
+    const hacer=async()=>{ b.disabled=true; await guardarPersona(p.id,set); renderPersons(); renderRoster(); };
+    if(p.active===false) hacer(); else confirmar(b.closest(".person"), `¿Estás seguro de dar de baja a ${p.name}? Deja de salir en la lista (conserva su historial).`, "Sí, dar de baja", hacer, true);
   }));
   list.querySelectorAll("button[data-soc]").forEach(b=>b.addEventListener("click",async()=>{
     const p=data.persons[b.dataset.soc]; const socia={...(p.socia||{})};

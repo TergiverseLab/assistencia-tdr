@@ -61,7 +61,8 @@ function pintarFicha(f){
     </dl>`;
   const st=f.querySelector(".f-status"); const q=c=>f.querySelector(c);
   const tras=async()=>{ renderPersons(); renderRoster(); }; // renderPersons ya deja la ficha abierta
-  if(q(".f-baja")) q(".f-baja").addEventListener("click",async e=>{ e.target.disabled=true; await guardarPersona(pid, off?{active:true,to:""}:{active:false,to:todayISO().slice(0,7)}, st); tras(); });
+  if(q(".f-baja")) q(".f-baja").addEventListener("click",async e=>{ const hacer=async()=>{ e.target.disabled=true; await guardarPersona(pid, off?{active:true,to:""}:{active:false,to:todayISO().slice(0,7)}, st); tras(); };
+    if(off) hacer(); else confirmar(q(".f-estado"), `¿Estás seguro de dar de baja a ${p.name}? Deja de salir en la lista (conserva su historial).`, "Sí, dar de baja", hacer, true); });
   if(q(".f-soc")) q(".f-soc").addEventListener("click",async e=>{ e.target.disabled=true; const socia={...(p.socia||{})}; if(socia[season]) delete socia[season]; else socia[season]={amount:SOCIA_AMOUNT,date:todayISO()}; await guardarPersona(pid,{socia},st); tras(); });
   // al cerrar los datos se olvida la contraseña: cada vez que se abren se vuelve a pedir
   const cerrarDatos=(msg)=>{ f.dataset.datos=""; clauMem=""; fitxes=null; fitxesError=""; fitxesAviso=""; pintarFicha(f); if(msg){ const s2=f.querySelector(".f-status"); s2.textContent=msg; s2.className="status f-status ok"; } };

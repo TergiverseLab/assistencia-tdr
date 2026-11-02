@@ -204,10 +204,14 @@ details.rses summary{cursor:pointer;color:var(--muted);font-size:.9rem;padding:4
 details.rses[open] summary{margin-bottom:6px}
 
 /* barrita de carga mientras se envía a la hoja */
-.carga{position:fixed;left:0;right:0;top:0;height:3px;z-index:20;overflow:hidden;background:transparent;pointer-events:none}
+.carga{position:fixed;left:0;right:0;top:env(safe-area-inset-top,0px);height:4px;z-index:20;overflow:hidden;background:transparent;pointer-events:none}
 .carga i{position:absolute;top:0;bottom:0;width:35%;background:var(--fg);border-radius:2px;animation:carga 1.1s ease-in-out infinite}
 @keyframes carga{0%{left:-35%}100%{left:100%}}
 @media (prefers-reduced-motion:reduce){.carga i{animation:none;left:0;width:100%;opacity:.4}}
+
+.confirm.danger{border:2.5px solid var(--fg);background:var(--soft)}
+.confirm.danger p b{font-weight:700}
+.confirm.danger .si{opacity:.8}
 </style>
 </head>
 <body>
@@ -511,7 +515,7 @@ async function pickStore(){
 
 (function(){
 // ===== 1. BASE: utilidades, temporadas, navegación, botón Guardar =====
-const APP_VERSION = "03/11 00:09";
+const APP_VERSION = "03/11 00:16";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;          // cuota mensual habitual (septiembre fue 25)
 const $ = id => document.getElementById(id);
@@ -557,7 +561,8 @@ const sesAsistencia = (k, grupo) => { const v=sesAsisDirecta(k); if(v!=null) ret
 const abiertos=new Set();
 const mesTancat = month => !!(data.settings && data.settings["tancat:"+month]===true);   // cerrado a mano con "Cerrar mes"
 const isLocked = month => !abiertos.has("m:"+month) && (month<todayISO().slice(0,7) || mesTancat(month));
-const isSesLocked = sid => { const s=sid?data.sessions[sid]:null; if(!s) return false; return !abiertos.has("s:"+sid) && (s.date||sid)<todayISO(); };
+// Una sesión YA REGISTRADA (de cualquier día) queda cerrada: para cambiarla, "Corregir registro". Una nueva se marca directamente.
+const isSesLocked = sid => { const s=sid?data.sessions[sid]:null; if(!s) return false; return !abiertos.has("s:"+sid); };
 
 // ---------- navegación ----------
 const views=["lista","pagos","hist","pers","res"];
@@ -594,7 +599,7 @@ $("save").addEventListener("click",()=>{ if(guardando) return; if(vistaActual===
 // Mientras se está enviando, solo la barrita de carga de arriba ("Guardando en la hoja…").
 function updPendientes(){
   const n = store && store.pending ? store.pending().length : 0; const b=$("banner");
-  const enviando = !!(store && store.enviando && store.enviando());
+  const enviando = !!(store && store.enviando && store.enviando()) || (typeof refreshing!=="undefined" && refreshing);
   $("carga").hidden = !enviando;
   if(n && !enviando && store.motivo){ b.hidden=false; b.className="banner warn"; b.innerHTML=`${esc(textoEspera())} <button class="btn ghost small" type="button" id="b-retry">Reintentar ahora</button>`;
     $("b-retry").onclick=async()=>{ $("b-retry").disabled=true; await store.retry(); updPendientes(); }; }
@@ -603,12 +608,15 @@ function updPendientes(){
 function banner(txt,cls){ const b=$("banner"); if(b.classList.contains("warn")&&!txt) return; b.hidden=!txt; b.className="banner"+(cls?" "+cls:""); b.textContent=txt||""; }
 
 // Confirmación dentro de la página (sin ventanas emergentes): sustituye una fila por la pregunta y dos botones
-function confirmar(fila, texto, si, alSi){
-  const box=document.createElement("div"); box.className="confirm"; box.setAttribute("role","alertdialog");
-  box.innerHTML=`<p>${esc(texto)}</p><div class="row"><button class="btn small" type="button">${esc(si)}</button><button class="btn ghost small" type="button">No</button></div>`;
+// peligro=true (eliminar, dar de baja): aviso resaltado y el botón destacado es "No"
+function confirmar(fila, texto, si, alSi, peligro){
+  const box=document.createElement("div"); box.className="confirm"+(peligro?" danger":""); box.setAttribute("role","alertdialog");
+  box.innerHTML = peligro
+    ? `<p><b>${esc(texto)}</b></p><div class="row"><button class="btn small no" type="button">No</button><button class="btn ghost small si" type="button">${esc(si)}</button></div>`
+    : `<p>${esc(texto)}</p><div class="row"><button class="btn small si" type="button">${esc(si)}</button><button class="btn ghost small no" type="button">No</button></div>`;
   fila.hidden=true; fila.after(box);
-  const [bSi,bNo]=box.querySelectorAll("button"); const cerrar=()=>{ box.remove(); fila.hidden=false; };
-  bNo.onclick=cerrar; bSi.onclick=()=>{ cerrar(); alSi(); }; bSi.focus();
+  const bSi=box.querySelector(".si"), bNo=box.querySelector(".no"); const cerrar=()=>{ box.remove(); fila.hidden=false; };
+  bNo.onclick=cerrar; bSi.onclick=()=>{ cerrar(); alSi(); }; (peligro?bNo:bSi).focus();
 }
 
 // Por qué hay cambios esperando: sin internet, o la hoja todavía tiene el puente antiguo. Lo guardado no se pierde.
@@ -724,7 +732,7 @@ function lineaGuardada(estado){
 }
 function applySesLock(){
   const sid=curSessionId; const has=!!(sid&&data.sessions[sid]); const locked=isSesLocked(sid);
-  const past = has && (data.sessions[sid].date||sid) < todayISO();
+  const past = has;   // cualquier sesión registrada tiene sus dos opciones: Corregir y Eliminar
   // Arriba, para una sesión ya registrada: [Corregir registro] (las pasadas) y [Eliminar registro]
   $("l-lockrow").hidden=!has; $("l-lock").hidden=!past;
   $("l-lock").textContent = locked ? "Corregir registro" : "Cancelar corrección";
@@ -790,7 +798,7 @@ $("l-borrar").addEventListener("click",()=>{
     try{ const res=await store.send(op); if(res.encola) setStatus("l-status","Registro eliminado. "+textoEspera(),"ok"); }
     catch(e){ setStatus("l-status","La hoja ha rechazado el borrado: "+e.message,"err"); refresh(); }
     updPendientes();
-  });
+  }, true);
 });
 
 // ===== 3. PAGOS =====
@@ -950,7 +958,8 @@ function renderPersons(){
     if(fila){ const f=document.createElement("div"); f.className="ficha"; f.dataset.pid=seguir.pid; f.dataset.datos=seguir.datos; fila.closest(".person").after(f); pintarFicha(f); } }
   list.querySelectorAll("button[data-id]").forEach(b=>b.addEventListener("click",async()=>{
     const p=data.persons[b.dataset.id]; const set = p.active===false ? {active:true, to:""} : {active:false, to:todayISO().slice(0,7)};
-    b.disabled=true; await guardarPersona(p.id,set); renderPersons(); renderRoster();
+    const hacer=async()=>{ b.disabled=true; await guardarPersona(p.id,set); renderPersons(); renderRoster(); };
+    if(p.active===false) hacer(); else confirmar(b.closest(".person"), `¿Estás seguro de dar de baja a ${p.name}? Deja de salir en la lista (conserva su historial).`, "Sí, dar de baja", hacer, true);
   }));
   list.querySelectorAll("button[data-soc]").forEach(b=>b.addEventListener("click",async()=>{
     const p=data.persons[b.dataset.soc]; const socia={...(p.socia||{})};
@@ -1032,7 +1041,8 @@ function pintarFicha(f){
     </dl>`;
   const st=f.querySelector(".f-status"); const q=c=>f.querySelector(c);
   const tras=async()=>{ renderPersons(); renderRoster(); }; // renderPersons ya deja la ficha abierta
-  if(q(".f-baja")) q(".f-baja").addEventListener("click",async e=>{ e.target.disabled=true; await guardarPersona(pid, off?{active:true,to:""}:{active:false,to:todayISO().slice(0,7)}, st); tras(); });
+  if(q(".f-baja")) q(".f-baja").addEventListener("click",async e=>{ const hacer=async()=>{ e.target.disabled=true; await guardarPersona(pid, off?{active:true,to:""}:{active:false,to:todayISO().slice(0,7)}, st); tras(); };
+    if(off) hacer(); else confirmar(q(".f-estado"), `¿Estás seguro de dar de baja a ${p.name}? Deja de salir en la lista (conserva su historial).`, "Sí, dar de baja", hacer, true); });
   if(q(".f-soc")) q(".f-soc").addEventListener("click",async e=>{ e.target.disabled=true; const socia={...(p.socia||{})}; if(socia[season]) delete socia[season]; else socia[season]={amount:SOCIA_AMOUNT,date:todayISO()}; await guardarPersona(pid,{socia},st); tras(); });
   // al cerrar los datos se olvida la contraseña: cada vez que se abren se vuelve a pedir
   const cerrarDatos=(msg)=>{ f.dataset.datos=""; clauMem=""; fitxes=null; fitxesError=""; fitxesAviso=""; pintarFicha(f); if(msg){ const s2=f.querySelector(".f-status"); s2.textContent=msg; s2.className="status f-status ok"; } };
@@ -1229,8 +1239,8 @@ function repintar(){
   updPendientes();
 }
 async function refresh(){
-  if(!store || refreshing || store.name==="local") return; refreshing=true;
-  try{ data=await store.load(); repintar(); }catch(e){} refreshing=false;
+  if(!store || refreshing || store.name==="local") return; refreshing=true; updPendientes();
+  try{ data=await store.load(); repintar(); }catch(e){} refreshing=false; updPendientes();
 }
 // Al volver a la página otro día (p. ej. quedó abierta en el móvil), Lista salta sola a la fecha de hoy
 let shownDay=null;
@@ -1251,8 +1261,9 @@ window.addEventListener("online",async()=>{ if(store){ await store.retry(); refr
   const cache=store.cached();
   if(cache){ data=cache; store.pending().forEach(op=>aplicarOp(data,op)); setDate(todayISO()); shownDay=todayISO(); updPendientes(); }
   else banner("Cargando datos…");
-  try{ data=await store.load(); banner(""); if(cache) repintar(); else { setDate(todayISO()); shownDay=todayISO(); } updPendientes(); }
-  catch(e){ if(!cache){ banner("No se han podido cargar los datos. Comprueba la conexión y recarga.","err"); setDate(todayISO()); } else updPendientes(); }
+  refreshing=true; updPendientes();
+  try{ data=await store.load(); refreshing=false; banner(""); if(cache) repintar(); else { setDate(todayISO()); shownDay=todayISO(); } updPendientes(); }
+  catch(e){ refreshing=false; updPendientes(); if(!cache){ banner("No se han podido cargar los datos. Comprueba la conexión y recarga.","err"); setDate(todayISO()); } else updPendientes(); }
   if(store.name==="local") banner("Esta copia guarda solo en este dispositivo. No está conectada a la hoja del Drive.","err");
 })();
 

@@ -92,7 +92,7 @@ function lineaGuardada(estado){
 }
 function applySesLock(){
   const sid=curSessionId; const has=!!(sid&&data.sessions[sid]); const locked=isSesLocked(sid);
-  const past = has && (data.sessions[sid].date||sid) < todayISO();
+  const past = has;   // cualquier sesión registrada tiene sus dos opciones: Corregir y Eliminar
   // Arriba, para una sesión ya registrada: [Corregir registro] (las pasadas) y [Eliminar registro]
   $("l-lockrow").hidden=!has; $("l-lock").hidden=!past;
   $("l-lock").textContent = locked ? "Corregir registro" : "Cancelar corrección";
@@ -158,5 +158,5 @@ $("l-borrar").addEventListener("click",()=>{
     try{ const res=await store.send(op); if(res.encola) setStatus("l-status","Registro eliminado. "+textoEspera(),"ok"); }
     catch(e){ setStatus("l-status","La hoja ha rechazado el borrado: "+e.message,"err"); refresh(); }
     updPendientes();
-  });
+  }, true);
 });

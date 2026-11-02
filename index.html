@@ -247,7 +247,7 @@ textarea{font:inherit;font-size:.85rem;width:100%;min-height:140px;background:va
       </div>
       <p class="note" id="r-socias"></p>
       <div class="chart" id="r-chart-ses"></div>
-      <p class="note">* posibles = sesiones de su grupo desde su primera asistencia (hasta la última si ya está de baja).</p>
+      <p class="note">* posibles = sesiones con lista de su grupo desde su primera asistencia (hasta la última si ya está de baja). Las sesiones sin lista no cuentan.</p>
       <div class="scroll tall" id="r-wrap"><table id="r-table"><thead><tr><th>Persona</th><th class="n">Sesiones</th><th class="n">%</th></tr></thead><tbody></tbody></table></div>
     </div>
     <div class="card">
@@ -371,7 +371,7 @@ async function pickStore(){
 
 // ===== LÓGICA DE LA PÁGINA =====
 (function(){
-const APP_VERSION = "02/11 19:39";
+const APP_VERSION = "02/11 19:43";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;           // cuota mensual habitual (septiembre fue 25)
 const defAmount = () => Number($("p-default").value)||DEFAULT_AMOUNT;
@@ -708,7 +708,7 @@ function renderSummary(){
   // % por persona = asistencias / sesiones a las que podía ir: las de su grupo, desde su primera asistencia hasta la última (o hasta hoy si sigue activa)
   const first={}, last={}, pgroups={};
   ids.forEach(id=>{ const s=data.sessions[id]; const dt=s.date||id; const g=sesGroup(id); s.present.forEach(p=>{ (pgroups[p]=pgroups[p]||new Set()).add(g); if(!first[p]||dt<first[p]) first[p]=dt; if(!last[p]||dt>last[p]) last[p]=dt; }); });
-  const denom=k=>{ const gs=pgroups[k]; if(!gs) return 0; const p=data.persons[k]; const end = (p&&p.active!==false) ? "9999" : last[k]; return ids.filter(id=>{ const dt=data.sessions[id].date||id; return gs.has(sesGroup(id)) && dt>=first[k] && dt<=end; }).length; };
+  const denom=k=>{ const gs=pgroups[k]; if(!gs) return 0; const p=data.persons[k]; const end = (p&&p.active!==false) ? "9999" : last[k]; return ids.filter(id=>{ const sx=data.sessions[id]; const dt=sx.date||id; return sx.present.length>0 && gs.has(sesGroup(id)) && dt>=first[k] && dt<=end; }).length; }; // las sesiones sin lista (solo constan por el guion) no cuentan como posibles
   keys.forEach(k=>{ const c=counts[k]||0; const d=denom(k); const tr=document.createElement("tr"); tr.innerHTML=`<td>${esc(nm(k))}</td><td class="n">${c} / ${d}</td><td class="n">${d?Math.round(100*c/d):0}%</td>`; tb.append(tr); });
   const months=Object.keys(data.pagos).filter(inCtxMonth).sort(); // de más antiguo a más reciente
   const tp=$("r-pagos").querySelector("tbody"); tp.innerHTML="";

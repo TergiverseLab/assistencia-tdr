@@ -45,7 +45,9 @@ function renderQuotaBar(q){
 }
 const checked=()=>[...$("l-roster").querySelectorAll("input:checked")].map(c=>c.value);
 const others=()=>$("l-others").value.split(",").map(s=>s.trim()).filter(Boolean);
-function updCount(){ $("l-count").textContent=checked().length+others().length; }
+// Un solo botón: "Marcar todas" o, si ya están todas, "Desmarcar todas"
+function todasMarcadas(){ const c=[...$("l-roster").querySelectorAll("input")]; return c.length>0 && c.every(x=>x.checked); }
+function updCount(){ $("l-count").textContent=checked().length+others().length; $("l-all").textContent = todasMarcadas() ? "Desmarcar todas" : "Marcar todas"; }
 function marcar(ids,otros){ $("l-roster").querySelectorAll("input").forEach(c=>{ c.checked=ids.includes(c.value); c.parentElement.classList.toggle("on",c.checked); }); $("l-others").value=(otros||[]).join(", "); updCount(); }
 // ¿hay cambios en pantalla sin guardar?
 const bajo=a=>a.map(x=>x.toLowerCase()).sort().join(",");
@@ -63,7 +65,7 @@ function applyDraft(){
   setStatus("l-status","Recuperado lo que tenías marcado sin guardar. Pulsa Guardar cuando termines.","ok"); return true;
 }
 $("l-others").addEventListener("input",()=>{ updCount(); saveDraft(); });
-$("l-all").addEventListener("click",()=>{ $("l-roster").querySelectorAll("input").forEach(c=>{c.checked=true;c.parentElement.classList.add("on");}); updCount(); saveDraft(); });
+$("l-all").addEventListener("click",()=>{ const on=!todasMarcadas(); $("l-roster").querySelectorAll("input").forEach(c=>{c.checked=on;c.parentElement.classList.toggle("on",on);}); updCount(); saveDraft(); });
 $("l-clear").addEventListener("click",()=>{ $("l-roster").querySelectorAll("input").forEach(c=>{c.checked=false;c.parentElement.classList.remove("on");}); $("l-others").value=""; updCount(); saveDraft(); setStatus("l-status",""); });
 
 function setDate(iso, sid){
@@ -91,18 +93,20 @@ function lineaGuardada(estado){
 function applySesLock(){
   const sid=curSessionId; const has=!!(sid&&data.sessions[sid]); const locked=isSesLocked(sid);
   const past = has && (data.sessions[sid].date||sid) < todayISO();
-  $("l-lockrow").hidden=!past; $("l-lock").textContent = locked ? "Desbloquear para corregir" : "Volver a cerrar";
-  $("l-info").textContent = past ? (locked ? "Sesión pasada: cerrada para no tocarla sin querer." : "Abierta para corregir: al guardar se cierra sola.") : "";
+  // Arriba, para una sesión ya registrada: [Corregir registro] (las pasadas) y [Eliminar registro]
+  $("l-lockrow").hidden=!has; $("l-lock").hidden=!past;
+  $("l-lock").textContent = locked ? "Corregir registro" : "Cancelar corrección";
+  $("l-info").textContent = past && !locked ? "Corrigiendo: cambia lo que haga falta y pulsa Guardar." : "";
+  $("l-info").hidden = !$("l-info").textContent;
   $("l-roster").querySelectorAll("input").forEach(c=>c.disabled=locked); $("l-others").disabled=locked; $("l-all").disabled=locked; $("l-clear").disabled=locked;
-  $("l-borrar").hidden = !has || locked;   // borrar: solo una sesión guardada y abierta (las pasadas, tras desbloquear)
   if(vistaActual==="lista") botonGuardar();
 }
 $("l-lock").addEventListener("click",()=>{
   if(!curSessionId) return; const k="s:"+curSessionId;
-  if(isSesLocked(curSessionId)) confirmar($("l-lockrow"), "Esta sesión ya está cerrada. ¿Seguro que quieres modificarla?", "Sí, modificar", ()=>{
-    abiertos.add(k); applySesLock(); setStatus("l-status","Sesión desbloqueada: corrige y guarda.","ok"); });
-  else { const cerrar=()=>{ abiertos.delete(k); loadSession(curSessionId); clearDraft(); applySesLock(); setStatus("l-status","Sesión cerrada sin cambios.","ok"); };
-    if(listaTocada()) confirmar($("l-lockrow"), "Hay cambios sin guardar. ¿Cerrar y descartarlos?", "Sí, descartar", cerrar); else cerrar(); }
+  if(isSesLocked(curSessionId)) confirmar($("l-lockrow"), "¿Corregir el registro de esta sesión?", "Sí, corregir", ()=>{
+    abiertos.add(k); applySesLock(); setStatus("l-status",""); });
+  else { const cerrar=()=>{ abiertos.delete(k); loadSession(curSessionId); clearDraft(); applySesLock(); setStatus("l-status","Corrección cancelada: el registro queda como estaba.","ok"); };
+    if(listaTocada()) confirmar($("l-lockrow"), "Hay cambios sin guardar. ¿Cancelar y descartarlos?", "Sí, descartar", cerrar); else cerrar(); }
 });
 $("l-group").addEventListener("change",()=>{ setDate($("l-date").value, $("l-group").value); });
 // ‹ › : salta a la sesión registrada anterior/siguiente. Si no hay más, al miércoles anterior/siguiente.
@@ -148,10 +152,10 @@ async function saveSession(){
 // Borrar una sesión entera (p. ej. una de prueba). Pide confirmación y queda en el Historial.
 $("l-borrar").addEventListener("click",()=>{
   const sid=curSessionId; if(!sid||!data.sessions[sid]) return; const d=data.sessions[sid].date||sid;
-  confirmar($("l-acciones"), `¿Estás seguro de borrar el registro de asistencia del ${DIAS[new Date(d+"T12:00:00").getDay()]} ${fmt(d)}? Desaparece del Resumen y de la hoja.`, "Sí, borrar", async()=>{
+  confirmar($("l-lockrow"), `¿Estás seguro de eliminar el registro de asistencia del ${DIAS[new Date(d+"T12:00:00").getDay()]} ${fmt(d)}? Desaparece del Resumen y de la hoja.`, "Sí, eliminar", async()=>{
     const op={action:"deleteSession", key:"d:"+sid, data:{id:sid}}; aplicarOp(data,op); abiertos.delete("s:"+sid); clearDraft();
-    curSessionId=null; setDate(d); setStatus("l-status","Registro de asistencia borrado.","ok");
-    try{ const res=await store.send(op); if(res.encola) setStatus("l-status","Registro de asistencia borrado. "+textoEspera(),"ok"); }
+    curSessionId=null; setDate(d); setStatus("l-status","Registro eliminado.","ok");
+    try{ const res=await store.send(op); if(res.encola) setStatus("l-status","Registro eliminado. "+textoEspera(),"ok"); }
     catch(e){ setStatus("l-status","La hoja ha rechazado el borrado: "+e.message,"err"); refresh(); }
     updPendientes();
   });

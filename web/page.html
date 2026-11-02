@@ -31,14 +31,15 @@
       </div>
       <div class="row nowrap" id="l-grouprow" hidden><label class="field" style="flex:1">Grupo <select id="l-group"></select></label></div>
       <p class="saved" id="l-saved" aria-live="polite"></p>
-      <div class="row" id="l-lockrow" hidden><button class="btn ghost small" id="l-lock" type="button">Desbloquear para corregir</button><span class="note" id="l-info"></span></div>
+      <div class="row" id="l-lockrow" hidden><button class="btn ghost small" id="l-lock" type="button">Corregir registro</button><button class="btn ghost small" id="l-borrar" type="button">Eliminar registro</button></div>
+      <p class="note" id="l-info"></p>
       <div class="row nowrap"><h2>Quién ha venido</h2><span class="spacer"></span><span class="count" id="l-count">0</span></div>
       <button class="btn ghost small" id="l-all" type="button" style="align-self:flex-start">Marcar todas</button>
       <button class="quotabar" id="l-quota" type="button" hidden></button>
       <div class="roster" id="l-roster"></div>
       <label class="field">Vienen a probar (nombres, separados por comas) <input type="text" id="l-others" placeholder="p. ej. Yolanda" autocomplete="off"></label>
       <p class="note">Solo para quien viene a probar y aún no está apuntada. Si se apunta, dale de alta en Personas y a partir de entonces sale en la lista.</p>
-      <div class="row" id="l-acciones"><button class="btn ghost small" id="l-clear" type="button">Limpiar</button><button class="btn ghost small" id="l-borrar" type="button" hidden>Borrar registro de asistencia</button><span class="status" id="l-status" aria-live="polite"></span></div>
+      <div class="row" id="l-acciones"><button class="btn ghost small" id="l-clear" type="button" hidden>Limpiar</button><span class="status" id="l-status" aria-live="polite"></span></div>
     </div>
   </section>
 
@@ -109,10 +110,10 @@
       <div class="chart" id="r-chart-ses"></div>
       <details class="rses"><summary>Ver la lista de sesiones</summary><div class="scroll"><table id="r-sestable"><thead><tr><th>Sesión</th><th class="n">Personas</th></tr></thead><tbody></tbody></table></div></details>
       <p class="note" id="r-probes" hidden></p>
-      <h3 class="rsub" id="r-perstit">Cuántas veces ha venido cada persona</h3>
+      <h3 class="rsub" id="r-perstit">Asistencia de cada persona</h3>
       <p class="note" id="r-nolista" hidden></p>
       <p class="note" id="r-tablenote"></p>
-      <div class="scroll tall" id="r-wrap"><table id="r-table"><thead><tr><th>Persona</th><th class="n">Ha venido</th></tr></thead><tbody></tbody></table></div>
+      <div class="scroll tall" id="r-wrap"><table id="r-table"><thead><tr><th>Persona</th><th class="n">Sesiones</th></tr></thead><tbody></tbody></table></div>
     </div>
     <div class="card">
       <h2>Cuotas por mes</h2>

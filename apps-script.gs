@@ -399,15 +399,21 @@ function instalar(){
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const propies = ORDRE_VISTES.concat(Object.keys(SHEETS).map(k=>SHEETS[k][0]), Object.keys(SHEETS).map(k=>SHEETS[k][2]));
   Object.keys(SHEETS).forEach(k=>sheet(k)); // renombra las de datos si tenían el nombre antiguo
-  const antigues = ss.getSheets().filter(sh=>!propies.includes(sh.getName()));
-  if (antigues.length){
-    const arxiu = SpreadsheetApp.create("Arxiu · pestanyes originals (Excel d'Emi) · Assistència i quotes TdR");
-    antigues.forEach(sh=>{ const c = sh.copyTo(arxiu); c.setName(sh.getName()); });
-    arxiu.getSheets().filter(sh=>!antigues.some(a=>a.getName()===sh.getName())).forEach(sh=>arxiu.deleteSheet(sh));
-    try { const carpeta = DriveApp.getFileById(ss.getId()).getParents().next(); DriveApp.getFileById(arxiu.getId()).moveTo(carpeta); } catch(e) {}
+  const noms = ss.getSheets().map(sh=>sh.getName()).filter(n=>!propies.includes(n));
+  if (noms.length){
+    const nomArxiu = "Arxiu · pestanyes originals (Excel d'Emi) · Assistència i quotes TdR";
+    let carpeta = null; try { carpeta = DriveApp.getFileById(ss.getId()).getParents().next(); } catch(e) {}
+    let arxiu = null;                                   // si un intento anterior ya lo creó, se reutiliza
+    if (carpeta){ const it = carpeta.getFilesByName(nomArxiu); if (it.hasNext()) arxiu = SpreadsheetApp.open(it.next()); }
+    if (!arxiu){ arxiu = SpreadsheetApp.create(nomArxiu); if (carpeta) try { DriveApp.getFileById(arxiu.getId()).moveTo(carpeta); } catch(e) {} }
+    noms.forEach(n=>{ const sh = ss.getSheetByName(n);
+      if (sh && !arxiu.getSheetByName(n)) try { sh.copyTo(arxiu).setName(n); } catch(e) { Logger.log("No s'ha pogut copiar «" + n + "»: " + e); } });
+    arxiu.getSheets().filter(sh=>!noms.includes(sh.getName())).forEach(sh=>{ if (arxiu.getSheets().length > 1) arxiu.deleteSheet(sh); });
     if (!ss.getSheetByName("Inici")) ss.insertSheet("Inici");  // una hoja tiene que quedar siempre
-    antigues.forEach(sh=>ss.deleteSheet(sh));
-    Logger.log("Arxivades a «" + arxiu.getName() + "»: " + antigues.map(s=>s.getName()).join(", "));
+    SpreadsheetApp.flush();
+    noms.forEach(n=>{ const sh = ss.getSheetByName(n);
+      if (sh && arxiu.getSheetByName(n)) try { ss.deleteSheet(sh); } catch(e) { Logger.log("No s'ha pogut esborrar «" + n + "»: " + e); } });
+    Logger.log("Arxivades a «" + nomArxiu + "»: " + noms.join(", "));
   }
   const shS = sheet("sessions"); const v = shS.getDataRange().getValues();
   for (let i = v.length-1; i >= 1; i--){

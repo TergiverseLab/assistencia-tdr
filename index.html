@@ -498,7 +498,7 @@ async function pickStore(){
 
 (function(){
 // ===== 1. BASE: utilidades, temporadas, navegación, botón Guardar =====
-const APP_VERSION = "02/11 23:55";
+const APP_VERSION = "02/11 23:56";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;          // cuota mensual habitual (septiembre fue 25)
 const $ = id => document.getElementById(id);
@@ -889,6 +889,8 @@ async function guardarPersona(id,set,msgEl){
 }
 // La ficha que se despliega al tocar un nombre está en 4b_fichas.js
 function renderPersons(){
+  // si hay una ficha abierta, se vuelve a abrir igual después de repintar (antes, al llegar los datos de la hoja, se cerraba sola)
+  const abierta=document.querySelector("#n-list .ficha"); const seguir=abierta?{pid:abierta.dataset.pid, datos:abierta.dataset.datos||""}:null;
   renderCtx(); const list=$("n-list"); list.innerHTML=""; const season=curSeasonKey(); const ps=personSeasons();
   const cur = ctx.season===curSeasonKey();
   const all=Object.values(data.persons).filter(p=>{
@@ -908,6 +910,8 @@ function renderPersons(){
     list.append(div);
   });
   list.querySelectorAll("[data-ficha]").forEach(el=>el.addEventListener("click",()=>toggleFicha(el.dataset.ficha, el.closest(".person"))));
+  if(seguir){ const fila=list.querySelector(`[data-ficha="${CSS.escape(seguir.pid)}"]`);
+    if(fila){ const f=document.createElement("div"); f.className="ficha"; f.dataset.pid=seguir.pid; f.dataset.datos=seguir.datos; fila.closest(".person").after(f); pintarFicha(f); } }
   list.querySelectorAll("button[data-id]").forEach(b=>b.addEventListener("click",async()=>{
     const p=data.persons[b.dataset.id]; const set = p.active===false ? {active:true, to:""} : {active:false, to:todayISO().slice(0,7)};
     b.disabled=true; await guardarPersona(p.id,set); renderPersons(); renderRoster();
@@ -991,7 +995,7 @@ function pintarFicha(f){
       <dt>Socia de la asociación</dt><dd>${Object.keys(p.socia||{}).sort().map(k=>`${esc((SEASONS.find(x=>x.id===k)||{}).years||k)} (${Number(p.socia[k].amount)||0} €${p.socia[k].date?", "+esc(fmt(p.socia[k].date)):""})`).join(", ")||"No"}</dd>
     </dl>`;
   const st=f.querySelector(".f-status"); const q=c=>f.querySelector(c);
-  const tras=async()=>{ renderPersons(); renderRoster(); const fila=document.querySelector(`[data-ficha="${CSS.escape(pid)}"]`); if(fila) toggleFicha(pid,fila.closest(".person")); };
+  const tras=async()=>{ renderPersons(); renderRoster(); }; // renderPersons ya deja la ficha abierta
   if(q(".f-baja")) q(".f-baja").addEventListener("click",async e=>{ e.target.disabled=true; await guardarPersona(pid, off?{active:true,to:""}:{active:false,to:todayISO().slice(0,7)}, st); tras(); });
   if(q(".f-soc")) q(".f-soc").addEventListener("click",async e=>{ e.target.disabled=true; const socia={...(p.socia||{})}; if(socia[season]) delete socia[season]; else socia[season]={amount:SOCIA_AMOUNT,date:todayISO()}; await guardarPersona(pid,{socia},st); tras(); });
   // al cerrar los datos se olvida la contraseña: cada vez que se abren se vuelve a pedir
@@ -1184,7 +1188,7 @@ function repintar(){
   if(vistaActual==="lista"){ if(!listaTocada()) setDate($("l-date").value||todayISO(), curSessionId); else { renderQuotaBar(quotaInfo()); lineaGuardada(); } }
   if(vistaActual==="pagos" && !hayBorradorPagos()) renderPagos();
   if(vistaActual==="hist") renderHistorial();
-  if(vistaActual==="pers") renderPersons();
+  if(vistaActual==="pers" && !document.querySelector('#n-list .ficha[data-datos="1"]')) renderPersons();
   if(vistaActual==="res") renderSummary();
   updPendientes();
 }

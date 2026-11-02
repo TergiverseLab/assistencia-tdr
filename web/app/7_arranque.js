@@ -6,7 +6,7 @@ function repintar(){
   if(vistaActual==="lista"){ if(!listaTocada()) setDate($("l-date").value||todayISO(), curSessionId); else { renderQuotaBar(quotaInfo()); lineaGuardada(); } }
   if(vistaActual==="pagos" && !hayBorradorPagos()) renderPagos();
   if(vistaActual==="hist") renderHistorial();
-  if(vistaActual==="pers") renderPersons();
+  if(vistaActual==="pers" && !document.querySelector('#n-list .ficha[data-datos="1"]')) renderPersons();
   if(vistaActual==="res") renderSummary();
   updPendientes();
 }

@@ -15,6 +15,8 @@ async function guardarPersona(id,set,msgEl){
 }
 // La ficha que se despliega al tocar un nombre está en 4b_fichas.js
 function renderPersons(){
+  // si hay una ficha abierta, se vuelve a abrir igual después de repintar (antes, al llegar los datos de la hoja, se cerraba sola)
+  const abierta=document.querySelector("#n-list .ficha"); const seguir=abierta?{pid:abierta.dataset.pid, datos:abierta.dataset.datos||""}:null;
   renderCtx(); const list=$("n-list"); list.innerHTML=""; const season=curSeasonKey(); const ps=personSeasons();
   const cur = ctx.season===curSeasonKey();
   const all=Object.values(data.persons).filter(p=>{
@@ -34,6 +36,8 @@ function renderPersons(){
     list.append(div);
   });
   list.querySelectorAll("[data-ficha]").forEach(el=>el.addEventListener("click",()=>toggleFicha(el.dataset.ficha, el.closest(".person"))));
+  if(seguir){ const fila=list.querySelector(`[data-ficha="${CSS.escape(seguir.pid)}"]`);
+    if(fila){ const f=document.createElement("div"); f.className="ficha"; f.dataset.pid=seguir.pid; f.dataset.datos=seguir.datos; fila.closest(".person").after(f); pintarFicha(f); } }
   list.querySelectorAll("button[data-id]").forEach(b=>b.addEventListener("click",async()=>{
     const p=data.persons[b.dataset.id]; const set = p.active===false ? {active:true, to:""} : {active:false, to:todayISO().slice(0,7)};
     b.disabled=true; await guardarPersona(p.id,set); renderPersons(); renderRoster();

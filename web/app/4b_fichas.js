@@ -60,7 +60,7 @@ function pintarFicha(f){
       <dt>Socia de la asociación</dt><dd>${Object.keys(p.socia||{}).sort().map(k=>`${esc((SEASONS.find(x=>x.id===k)||{}).years||k)} (${Number(p.socia[k].amount)||0} €${p.socia[k].date?", "+esc(fmt(p.socia[k].date)):""})`).join(", ")||"No"}</dd>
     </dl>`;
   const st=f.querySelector(".f-status"); const q=c=>f.querySelector(c);
-  const tras=async()=>{ renderPersons(); renderRoster(); const fila=document.querySelector(`[data-ficha="${CSS.escape(pid)}"]`); if(fila) toggleFicha(pid,fila.closest(".person")); };
+  const tras=async()=>{ renderPersons(); renderRoster(); }; // renderPersons ya deja la ficha abierta
   if(q(".f-baja")) q(".f-baja").addEventListener("click",async e=>{ e.target.disabled=true; await guardarPersona(pid, off?{active:true,to:""}:{active:false,to:todayISO().slice(0,7)}, st); tras(); });
   if(q(".f-soc")) q(".f-soc").addEventListener("click",async e=>{ e.target.disabled=true; const socia={...(p.socia||{})}; if(socia[season]) delete socia[season]; else socia[season]={amount:SOCIA_AMOUNT,date:todayISO()}; await guardarPersona(pid,{socia},st); tras(); });
   // al cerrar los datos se olvida la contraseña: cada vez que se abren se vuelve a pedir

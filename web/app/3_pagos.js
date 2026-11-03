@@ -38,7 +38,8 @@ function estadoPantalla(){ const ui={}, soc={};
 function cambiosPagos(){ // compara la pantalla con la base cargada
   const {ui,soc}=estadoPantalla(); const set={}, unset=[];
   Object.keys(ui).forEach(pid=>{ const b=basePag.rows[pid]; const u=ui[pid];
-    if(u.on && (!b || Number(b.amount)!==u.amount)) set[pid]={amount:u.amount, date:(b&&b.date)||todayISO()};
+    const amt=u.amount>0?u.amount:(Number($("p-default").value)||DEFAULT_AMOUNT);   /* marcada sin importe: va la cuota normal, nunca 0 € */
+    if(u.on && (!b || Number(b.amount)!==amt)) set[pid]={amount:amt, date:(b&&b.date)||todayISO()};
     if(!u.on && b) unset.push(pid); });
   return {set, unset, soc};
 }
@@ -61,7 +62,7 @@ function renderPagos(){
   const personas=payPersons(curMonth);
   if(!personas.length){ list.innerHTML='<p class="empty">No consta ningún pago en este mes.</p>'; }
   personas.forEach(p=>{
-    const r=rows[p.id]; const div=document.createElement("div"); div.className="pay"+(mesRegistrado(curMonth) && !r ? " falta" : "");   // mes registrado: quien no ha pagado, en rojo
+    const r=rows[p.id]; const div=document.createElement("div"); div.className="pay"+(mesRegistrado(curMonth) && !r && curMonth<=thisM ? " falta" : "");   // mes registrado: quien no ha pagado, en rojo
     div.innerHTML=`<div class="name">${esc(p.name)}<small>${p.active===false?"(baja) ":""}${r&&r.date?"pagado "+esc(fmt(r.date)):"pendiente"}</small></div>
       <input type="number" inputmode="decimal" min="0" step="1" value="${esc(r?r.amount:defAmount())}" class="${r?"":"dim"}" aria-label="Importe ${esc(p.name)}" data-id="${esc(p.id)}" ${locked?"disabled":""}>
       <button class="tog ${r?"on":""}" type="button" data-id="${esc(p.id)}" aria-pressed="${!!r}" aria-label="Pagado ${esc(p.name)}" ${locked?"disabled":""}>${r?"✓":"○"}</button>`;
@@ -100,7 +101,7 @@ function lineaPagos(estado){
   el.textContent=""; el.className="saved";
 }
 function updTotal(){ const {ui,soc}=estadoPantalla(); const on=Object.values(ui).filter(u=>u.on); let t=on.reduce((a,u)=>a+u.amount,0); const ns=Object.keys(soc).length; t+=Object.values(soc).reduce((a,v)=>a+v,0);
-  $("p-total").textContent=`${on.length} pagos${ns?` + ${ns} socia`:""} · ${t} €`; }
+  $("p-total").textContent=`${on.length} ${on.length===1?"pago":"pagos"}${ns?` + ${ns} socia`:""} · ${t} €`; }
 
 async function savePagos(){
   const month=curMonth; if(isLocked(month)) return; const c=cambiosPagos();

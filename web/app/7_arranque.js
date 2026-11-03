@@ -20,7 +20,7 @@ function syncToday(){ const t=todayISO(); if(shownDay && shownDay!==t && !listaT
 document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"){ syncToday(); refresh(); } });
 window.addEventListener("focus",syncToday); setInterval(syncToday,60000);
 // con cobertura débil el móvil no siempre avisa de que vuelve la red: cada minuto se reintenta lo pendiente
-setInterval(()=>{ if(store && store.pending().length) store.retry(); },60000);
+setInterval(async()=>{ if(store && store.pending().length){ const antes=store.pending().length; await store.retry(); if(store.pending().length<antes) refresh(); updPendientes(); } },60000);   /* si se ha enviado algo, repinta (quita el «Sin conexión» de debajo de la fecha) */
 window.addEventListener("online",async()=>{ if(store){ await store.retry(); refresh(); } });
 
 (async()=>{

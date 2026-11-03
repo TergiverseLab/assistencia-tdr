@@ -117,11 +117,12 @@ $("l-group").addEventListener("change",()=>{ setDate($("l-date").value, $("l-gro
 function shiftWed(n){
   const cur=$("l-date").value||todayISO();
   const dates=[...new Set(Object.keys(data.sessions).map(k=>data.sessions[k].date||k))].sort();
-  const target = n>0 ? dates.find(d=>d>cur) : [...dates].reverse().find(d=>d<cur);
-  if(target){ setDate(target); return; }
+  const reg = n>0 ? dates.find(d=>d>cur) : [...dates].reverse().find(d=>d<cur);
   const d=new Date(cur+"T12:00:00"); const dow=d.getDay();
   let diff = n>0 ? ((3-dow+7)%7||7) : -(((dow-3+7)%7)||7); d.setDate(d.getDate()+diff);
-  d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); setDate(d.toISOString().slice(0,10));
+  d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); const sem=d.toISOString().slice(0,10);
+  // la más cercana de las dos: el día de taller de al lado o una sesión registrada que caiga antes (p. ej. en otro día)
+  setDate(!reg ? sem : n>0 ? (reg<sem?reg:sem) : (reg>sem?reg:sem));
 }
 $("l-prevw").addEventListener("click",()=>shiftWed(-1)); $("l-nextw").addEventListener("click",()=>shiftWed(1));
 $("l-date").addEventListener("change",()=>{ if($("l-date").value) setDate($("l-date").value); });

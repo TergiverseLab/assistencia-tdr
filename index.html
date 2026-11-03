@@ -164,6 +164,7 @@ footer{display:flex;justify-content:flex-end;color:var(--line);font-size:.65rem;
 .chart text{font-family:var(--body);fill:var(--muted);font-size:11px}
 .chart text.v{fill:var(--fg);font-weight:600}
 .chart svg.apretada text{font-size:9.5px}
+.chart svg.muchas text.v{font-size:7.5px}
 .chart line{stroke:var(--line)}
 textarea{font:inherit;font-size:.85rem;width:100%;min-height:140px;background:var(--soft);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px}
 .banner{background:var(--soft);border-radius:10px;padding:10px 12px;font-size:.9rem}
@@ -223,6 +224,9 @@ details.rses[open] summary{margin-bottom:6px}
 
 .saved.reg{color:var(--fg)}
 .saved.reg b{font-weight:600}
+
+/* Barra «Guardar» desactivada: opaca (antes se transparentaba la lista de debajo) */
+.savebar .btn:disabled{opacity:1;background:var(--soft);color:var(--muted);box-shadow:none}
 </style>
 </head>
 <body>
@@ -533,7 +537,7 @@ async function pickStore(){
 
 (function(){
 // ===== 1. BASE: utilidades, temporadas, navegación, botón Guardar =====
-const APP_VERSION = "03/11 01:59:01";
+const APP_VERSION = "03/11 02:46:58";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;          // cuota mensual habitual (septiembre fue 25)
 const $ = id => document.getElementById(id);
@@ -627,7 +631,7 @@ function updPendientes(){
   const enviando = !!(store && store.enviando && store.enviando()) || (typeof refreshing!=="undefined" && refreshing);
   $("carga").hidden = !enviando;
   if(n && !enviando && store.motivo){ b.hidden=false; b.className="banner warn"; b.innerHTML=`${esc(textoEspera())} <button class="btn ghost small" type="button" id="b-retry">Reintentar ahora</button>`;
-    $("b-retry").onclick=async()=>{ $("b-retry").disabled=true; await store.retry(); updPendientes(); }; }
+    $("b-retry").onclick=async()=>{ $("b-retry").disabled=true; const antes=store.pending().length; await store.retry(); if(store.pending().length<antes) refresh(); updPendientes(); }; }
   else if(b.classList.contains("warn")){ b.hidden=true; b.className="banner"; b.textContent=""; }
 }
 function banner(txt,cls){ const b=$("banner"); if(b.classList.contains("warn")&&!txt) return; b.hidden=!txt; b.className="banner"+(cls?" "+cls:""); b.textContent=txt||""; }
@@ -782,11 +786,12 @@ $("l-group").addEventListener("change",()=>{ setDate($("l-date").value, $("l-gro
 function shiftWed(n){
   const cur=$("l-date").value||todayISO();
   const dates=[...new Set(Object.keys(data.sessions).map(k=>data.sessions[k].date||k))].sort();
-  const target = n>0 ? dates.find(d=>d>cur) : [...dates].reverse().find(d=>d<cur);
-  if(target){ setDate(target); return; }
+  const reg = n>0 ? dates.find(d=>d>cur) : [...dates].reverse().find(d=>d<cur);
   const d=new Date(cur+"T12:00:00"); const dow=d.getDay();
   let diff = n>0 ? ((3-dow+7)%7||7) : -(((dow-3+7)%7)||7); d.setDate(d.getDate()+diff);
-  d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); setDate(d.toISOString().slice(0,10));
+  d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); const sem=d.toISOString().slice(0,10);
+  // la más cercana de las dos: el día de taller de al lado o una sesión registrada que caiga antes (p. ej. en otro día)
+  setDate(!reg ? sem : n>0 ? (reg<sem?reg:sem) : (reg>sem?reg:sem));
 }
 $("l-prevw").addEventListener("click",()=>shiftWed(-1)); $("l-nextw").addEventListener("click",()=>shiftWed(1));
 $("l-date").addEventListener("change",()=>{ if($("l-date").value) setDate($("l-date").value); });
@@ -871,7 +876,8 @@ function estadoPantalla(){ const ui={}, soc={};
 function cambiosPagos(){ // compara la pantalla con la base cargada
   const {ui,soc}=estadoPantalla(); const set={}, unset=[];
   Object.keys(ui).forEach(pid=>{ const b=basePag.rows[pid]; const u=ui[pid];
-    if(u.on && (!b || Number(b.amount)!==u.amount)) set[pid]={amount:u.amount, date:(b&&b.date)||todayISO()};
+    const amt=u.amount>0?u.amount:(Number($("p-default").value)||DEFAULT_AMOUNT);   /* marcada sin importe: va la cuota normal, nunca 0 € */
+    if(u.on && (!b || Number(b.amount)!==amt)) set[pid]={amount:amt, date:(b&&b.date)||todayISO()};
     if(!u.on && b) unset.push(pid); });
   return {set, unset, soc};
 }
@@ -894,7 +900,7 @@ function renderPagos(){
   const personas=payPersons(curMonth);
   if(!personas.length){ list.innerHTML='<p class="empty">No consta ningún pago en este mes.</p>'; }
   personas.forEach(p=>{
-    const r=rows[p.id]; const div=document.createElement("div"); div.className="pay"+(mesRegistrado(curMonth) && !r ? " falta" : "");   // mes registrado: quien no ha pagado, en rojo
+    const r=rows[p.id]; const div=document.createElement("div"); div.className="pay"+(mesRegistrado(curMonth) && !r && curMonth<=thisM ? " falta" : "");   // mes registrado: quien no ha pagado, en rojo
     div.innerHTML=`<div class="name">${esc(p.name)}<small>${p.active===false?"(baja) ":""}${r&&r.date?"pagado "+esc(fmt(r.date)):"pendiente"}</small></div>
       <input type="number" inputmode="decimal" min="0" step="1" value="${esc(r?r.amount:defAmount())}" class="${r?"":"dim"}" aria-label="Importe ${esc(p.name)}" data-id="${esc(p.id)}" ${locked?"disabled":""}>
       <button class="tog ${r?"on":""}" type="button" data-id="${esc(p.id)}" aria-pressed="${!!r}" aria-label="Pagado ${esc(p.name)}" ${locked?"disabled":""}>${r?"✓":"○"}</button>`;
@@ -933,7 +939,7 @@ function lineaPagos(estado){
   el.textContent=""; el.className="saved";
 }
 function updTotal(){ const {ui,soc}=estadoPantalla(); const on=Object.values(ui).filter(u=>u.on); let t=on.reduce((a,u)=>a+u.amount,0); const ns=Object.keys(soc).length; t+=Object.values(soc).reduce((a,v)=>a+v,0);
-  $("p-total").textContent=`${on.length} pagos${ns?` + ${ns} socia`:""} · ${t} €`; }
+  $("p-total").textContent=`${on.length} ${on.length===1?"pago":"pagos"}${ns?` + ${ns} socia`:""} · ${t} €`; }
 
 async function savePagos(){
   const month=curMonth; if(isLocked(month)) return; const c=cambiosPagos();
@@ -975,7 +981,7 @@ function renderPersons(){
   const cur = ctx.season===curSeasonKey();
   const all=Object.values(data.persons).filter(p=>{
     if(ctx.season==="all") return true;
-    if(cur && ctx.group==="all") return p.active!==false || (ps[p.id]&&ps[p.id].seasons.has(ctx.season));
+    if(cur && ctx.group==="all") return p.active!==false || (ps[p.id]&&ps[p.id].seasons.has(ctx.season)) || (!!p.to && seasonOf(p.to)===ctx.season);
     const v=ps[p.id]; if(!v||!v.seasons.has(ctx.season)) return false;
     return ctx.group==="all" || v.groups.has(ctx.group);
   }).sort((a,b)=>(a.active===false)-(b.active===false)||a.name.localeCompare(b.name,"es"));
@@ -1072,7 +1078,7 @@ function pintarFicha(f){
     <dl>
       <dt>Temporadas</dt><dd>${[...temps].sort().map(seasonLabel).map(esc).join("<br>")||"—"}</dd>
       <dt>Sesiones con lista</dt><dd>${conLista.length}${conLista.length?` <small>(última: ${esc(fmt(data.sessions[conLista[conLista.length-1]].date||conLista[conLista.length-1]))})</small>`:""}</dd>
-      <dt>Cuotas</dt><dd>${pagos.length?`${pagos.length} meses · ${pagos.reduce((a,x)=>a+x.a,0)} €<br><small>${pagos.map(x=>esc(shortMonth(x.m))+" "+x.a+" €").join(" · ")}</small>`:"—"}</dd>
+      <dt>Cuotas</dt><dd>${pagos.length?`${pagos.length} ${pagos.length===1?"mes":"meses"} · ${pagos.reduce((a,x)=>a+x.a,0)} €<br><small>${pagos.map(x=>esc(shortMonth(x.m))+" "+x.a+" €").join(" · ")}</small>`:"—"}</dd>
       <dt>Socia de la asociación</dt><dd>${Object.keys(p.socia||{}).sort().map(k=>`${esc((SEASONS.find(x=>x.id===k)||{}).years||k)} (${Number(p.socia[k].amount)||0} €${p.socia[k].date?", "+esc(fmt(p.socia[k].date)):""})`).join(", ")||"No"}</dd>
     </dl>`;
   const st=f.querySelector(".f-status"); const q=c=>f.querySelector(c);
@@ -1107,15 +1113,17 @@ function bars(el, items, fmtV){ // items: [{label, value, short?}], una sola ser
   const W=360,H=150,top=22,bottom=28,left=6,right=6; const n=items.length;
   const max=Math.max(...items.map(i=>i.value),1); const bw=Math.min(40,(W-left-right)/n-4); const step=(W-left-right)/n;
   const y=v=>top+(H-top-bottom)*(1-v/max);
-  // Hasta 12 barras: cada una con su cifra y su etiqueta. Con más, las cifras solo en la más alta y en la última,
-  // y las etiquetas repartidas; nunca se queda sin cifra la barra más alta.
-  const todas=n<=12, apretado=n>8, every=Math.ceil(n/8), iMax=items.findIndex(i=>i.value===max);
-  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Gráfica"${apretado?' class="apretada"':""}>`;
+  // Cada barra lleva su cifra (con muchas barras, más pequeña y sin «€»). Las etiquetas de abajo: todas hasta 12
+  // barras; con más, repartidas, y la primera y la última pegadas a su borde para que no se corten.
+  const todas=n<=12, apretado=n>8, every=Math.ceil(n/7), muchas=n>12;
+  const fv = muchas ? v=>String(fmtV(v)).replace(/\s*€$/,"") : fmtV;
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Gráfica" class="${apretado?"apretada":""}${muchas?" muchas":""}">`;
   s+=`<line x1="${left}" x2="${W-right}" y1="${H-bottom}" y2="${H-bottom}"/>`;
   items.forEach((it,i)=>{ const x=left+step*i+(step-bw)/2; const yy=y(it.value); const h=H-bottom-yy; const cx=(x+bw/2).toFixed(1);
     s+=`<rect class="bar" x="${x.toFixed(1)}" y="${yy.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(h,0).toFixed(1)}" rx="3"><title>${esc(it.label)}: ${esc(fmtV(it.value))}</title></rect>`;
-    if(todas || i===iMax || i===n-1) s+=`<text class="v" x="${cx}" y="${(yy-5).toFixed(1)}" text-anchor="middle">${esc(fmtV(it.value))}</text>`;
-    if(todas || i%every===0 || i===n-1) s+=`<text x="${cx}" y="${H-bottom+16}" text-anchor="middle">${esc(apretado&&it.short?it.short:it.label)}</text>`;
+    s+=`<text class="v" x="${cx}" y="${(yy-4).toFixed(1)}" text-anchor="middle">${esc(fv(it.value))}</text>`;
+    if(todas || i%every===0 || i===n-1){ const anc = muchas&&i===0 ? "start" : muchas&&i===n-1 ? "end" : "middle", tx = anc==="start" ? x.toFixed(1) : anc==="end" ? (x+bw).toFixed(1) : cx;
+      if(!(muchas && i!==n-1 && n-1-i<every)) s+=`<text x="${tx}" y="${H-bottom+16}" text-anchor="${anc}">${esc(apretado&&it.short?it.short:it.label)}</text>`; }
   });
   el.innerHTML=s+"</svg>";
 }
@@ -1215,8 +1223,9 @@ function renderHistorial(){
     it.innerHTML=`<span class="ht">${esc(hh)}</span><span class="hx">${e.titulo?`<b>${esc(e.titulo)}</b>`:""}${e.det.map(d=>`<span class="hd">${esc(d)}</span>`).join("")}</span>`;
     it.addEventListener("click",()=>{
       if(r.accio==="sessio" && data.sessions[r.ref]){ show("lista"); setDate(data.sessions[r.ref].date||r.ref.slice(0,10), r.ref); }
+      else if(r.accio==="sessio" && /^\d{4}-\d{2}-\d{2}/.test(r.ref)){ show("lista"); setDate(r.ref.slice(0,10)); }
       else if((r.accio==="pagaments"||r.accio==="mes") && /^\d{4}-\d{2}$/.test(r.ref)){ curMonth=r.ref; show("pagos"); }
-      else if(r.accio==="persona" && data.persons[r.ref]){ show("pers"); const el=document.querySelector(`[data-ficha="${CSS.escape(r.ref)}"]`); if(el){ el.click(); el.scrollIntoView({block:"center"}); } }
+      else if(r.accio==="persona" && data.persons[r.ref]){ show("pers"); const el=document.querySelector(`[data-ficha="${CSS.escape(r.ref)}"]`); if(el){ if(!document.querySelector(`.ficha[data-pid="${CSS.escape(r.ref)}"]`)) el.click(); el.scrollIntoView({block:"center"}); } }
     });
     box.append(it);
   });
@@ -1287,7 +1296,7 @@ function syncToday(){ const t=todayISO(); if(shownDay && shownDay!==t && !listaT
 document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"){ syncToday(); refresh(); } });
 window.addEventListener("focus",syncToday); setInterval(syncToday,60000);
 // con cobertura débil el móvil no siempre avisa de que vuelve la red: cada minuto se reintenta lo pendiente
-setInterval(()=>{ if(store && store.pending().length) store.retry(); },60000);
+setInterval(async()=>{ if(store && store.pending().length){ const antes=store.pending().length; await store.retry(); if(store.pending().length<antes) refresh(); updPendientes(); } },60000);   /* si se ha enviado algo, repinta (quita el «Sin conexión» de debajo de la fecha) */
 window.addEventListener("online",async()=>{ if(store){ await store.retry(); refresh(); } });
 
 (async()=>{

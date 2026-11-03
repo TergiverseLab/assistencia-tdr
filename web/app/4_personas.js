@@ -21,7 +21,7 @@ function renderPersons(){
   const cur = ctx.season===curSeasonKey();
   const all=Object.values(data.persons).filter(p=>{
     if(ctx.season==="all") return true;
-    if(cur && ctx.group==="all") return p.active!==false || (ps[p.id]&&ps[p.id].seasons.has(ctx.season));
+    if(cur && ctx.group==="all") return p.active!==false || (ps[p.id]&&ps[p.id].seasons.has(ctx.season)) || (!!p.to && seasonOf(p.to)===ctx.season);
     const v=ps[p.id]; if(!v||!v.seasons.has(ctx.season)) return false;
     return ctx.group==="all" || v.groups.has(ctx.group);
   }).sort((a,b)=>(a.active===false)-(b.active===false)||a.name.localeCompare(b.name,"es"));

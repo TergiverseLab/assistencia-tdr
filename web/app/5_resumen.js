@@ -4,15 +4,17 @@ function bars(el, items, fmtV){ // items: [{label, value, short?}], una sola ser
   const W=360,H=150,top=22,bottom=28,left=6,right=6; const n=items.length;
   const max=Math.max(...items.map(i=>i.value),1); const bw=Math.min(40,(W-left-right)/n-4); const step=(W-left-right)/n;
   const y=v=>top+(H-top-bottom)*(1-v/max);
-  // Hasta 12 barras: cada una con su cifra y su etiqueta. Con más, las cifras solo en la más alta y en la última,
-  // y las etiquetas repartidas; nunca se queda sin cifra la barra más alta.
-  const todas=n<=12, apretado=n>8, every=Math.ceil(n/8), iMax=items.findIndex(i=>i.value===max);
-  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Gráfica"${apretado?' class="apretada"':""}>`;
+  // Cada barra lleva su cifra (con muchas barras, más pequeña y sin «€»). Las etiquetas de abajo: todas hasta 12
+  // barras; con más, repartidas, y la primera y la última pegadas a su borde para que no se corten.
+  const todas=n<=12, apretado=n>8, every=Math.ceil(n/7), muchas=n>12;
+  const fv = muchas ? v=>String(fmtV(v)).replace(/\s*€$/,"") : fmtV;
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Gráfica" class="${apretado?"apretada":""}${muchas?" muchas":""}">`;
   s+=`<line x1="${left}" x2="${W-right}" y1="${H-bottom}" y2="${H-bottom}"/>`;
   items.forEach((it,i)=>{ const x=left+step*i+(step-bw)/2; const yy=y(it.value); const h=H-bottom-yy; const cx=(x+bw/2).toFixed(1);
     s+=`<rect class="bar" x="${x.toFixed(1)}" y="${yy.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(h,0).toFixed(1)}" rx="3"><title>${esc(it.label)}: ${esc(fmtV(it.value))}</title></rect>`;
-    if(todas || i===iMax || i===n-1) s+=`<text class="v" x="${cx}" y="${(yy-5).toFixed(1)}" text-anchor="middle">${esc(fmtV(it.value))}</text>`;
-    if(todas || i%every===0 || i===n-1) s+=`<text x="${cx}" y="${H-bottom+16}" text-anchor="middle">${esc(apretado&&it.short?it.short:it.label)}</text>`;
+    s+=`<text class="v" x="${cx}" y="${(yy-4).toFixed(1)}" text-anchor="middle">${esc(fv(it.value))}</text>`;
+    if(todas || i%every===0 || i===n-1){ const anc = muchas&&i===0 ? "start" : muchas&&i===n-1 ? "end" : "middle", tx = anc==="start" ? x.toFixed(1) : anc==="end" ? (x+bw).toFixed(1) : cx;
+      if(!(muchas && i!==n-1 && n-1-i<every)) s+=`<text x="${tx}" y="${H-bottom+16}" text-anchor="${anc}">${esc(apretado&&it.short?it.short:it.label)}</text>`; }
   });
   el.innerHTML=s+"</svg>";
 }

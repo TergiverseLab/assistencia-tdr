@@ -35,8 +35,9 @@ function renderHistorial(){
     it.innerHTML=`<span class="ht">${esc(hh)}</span><span class="hx">${e.titulo?`<b>${esc(e.titulo)}</b>`:""}${e.det.map(d=>`<span class="hd">${esc(d)}</span>`).join("")}</span>`;
     it.addEventListener("click",()=>{
       if(r.accio==="sessio" && data.sessions[r.ref]){ show("lista"); setDate(data.sessions[r.ref].date||r.ref.slice(0,10), r.ref); }
+      else if(r.accio==="sessio" && /^\d{4}-\d{2}-\d{2}/.test(r.ref)){ show("lista"); setDate(r.ref.slice(0,10)); }
       else if((r.accio==="pagaments"||r.accio==="mes") && /^\d{4}-\d{2}$/.test(r.ref)){ curMonth=r.ref; show("pagos"); }
-      else if(r.accio==="persona" && data.persons[r.ref]){ show("pers"); const el=document.querySelector(`[data-ficha="${CSS.escape(r.ref)}"]`); if(el){ el.click(); el.scrollIntoView({block:"center"}); } }
+      else if(r.accio==="persona" && data.persons[r.ref]){ show("pers"); const el=document.querySelector(`[data-ficha="${CSS.escape(r.ref)}"]`); if(el){ if(!document.querySelector(`.ficha[data-pid="${CSS.escape(r.ref)}"]`)) el.click(); el.scrollIntoView({block:"center"}); } }
     });
     box.append(it);
   });

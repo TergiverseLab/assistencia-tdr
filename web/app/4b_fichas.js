@@ -56,7 +56,7 @@ function pintarFicha(f){
     <dl>
       <dt>Temporadas</dt><dd>${[...temps].sort().map(seasonLabel).map(esc).join("<br>")||"—"}</dd>
       <dt>Sesiones con lista</dt><dd>${conLista.length}${conLista.length?` <small>(última: ${esc(fmt(data.sessions[conLista[conLista.length-1]].date||conLista[conLista.length-1]))})</small>`:""}</dd>
-      <dt>Cuotas</dt><dd>${pagos.length?`${pagos.length} meses · ${pagos.reduce((a,x)=>a+x.a,0)} €<br><small>${pagos.map(x=>esc(shortMonth(x.m))+" "+x.a+" €").join(" · ")}</small>`:"—"}</dd>
+      <dt>Cuotas</dt><dd>${pagos.length?`${pagos.length} ${pagos.length===1?"mes":"meses"} · ${pagos.reduce((a,x)=>a+x.a,0)} €<br><small>${pagos.map(x=>esc(shortMonth(x.m))+" "+x.a+" €").join(" · ")}</small>`:"—"}</dd>
       <dt>Socia de la asociación</dt><dd>${Object.keys(p.socia||{}).sort().map(k=>`${esc((SEASONS.find(x=>x.id===k)||{}).years||k)} (${Number(p.socia[k].amount)||0} €${p.socia[k].date?", "+esc(fmt(p.socia[k].date)):""})`).join(", ")||"No"}</dd>
     </dl>`;
   const st=f.querySelector(".f-status"); const q=c=>f.querySelector(c);

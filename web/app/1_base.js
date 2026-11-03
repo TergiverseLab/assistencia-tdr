@@ -93,7 +93,7 @@ function updPendientes(){
   const enviando = !!(store && store.enviando && store.enviando()) || (typeof refreshing!=="undefined" && refreshing);
   $("carga").hidden = !enviando;
   if(n && !enviando && store.motivo){ b.hidden=false; b.className="banner warn"; b.innerHTML=`${esc(textoEspera())} <button class="btn ghost small" type="button" id="b-retry">Reintentar ahora</button>`;
-    $("b-retry").onclick=async()=>{ $("b-retry").disabled=true; await store.retry(); updPendientes(); }; }
+    $("b-retry").onclick=async()=>{ $("b-retry").disabled=true; const antes=store.pending().length; await store.retry(); if(store.pending().length<antes) refresh(); updPendientes(); }; }
   else if(b.classList.contains("warn")){ b.hidden=true; b.className="banner"; b.textContent=""; }
 }
 function banner(txt,cls){ const b=$("banner"); if(b.classList.contains("warn")&&!txt) return; b.hidden=!txt; b.className="banner"+(cls?" "+cls:""); b.textContent=txt||""; }

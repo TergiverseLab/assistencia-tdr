@@ -1,15 +1,18 @@
 // ===== 5. RESUMEN y filtros de temporada/grupo =====
-function bars(el, items, fmtV){ // items: [{label, value}], una sola serie, barras verticales
+function bars(el, items, fmtV){ // items: [{label, value, short?}], una sola serie, barras verticales
   if(!items.length){ el.innerHTML=""; return; }
   const W=360,H=150,top=22,bottom=28,left=6,right=6; const n=items.length;
   const max=Math.max(...items.map(i=>i.value),1); const bw=Math.min(40,(W-left-right)/n-4); const step=(W-left-right)/n;
-  const y=v=>top+(H-top-bottom)*(1-v/max); const every=Math.ceil(n/6);
-  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Gráfica">`;
+  const y=v=>top+(H-top-bottom)*(1-v/max);
+  // Hasta 12 barras: cada una con su cifra y su etiqueta. Con más, las cifras solo en la más alta y en la última,
+  // y las etiquetas repartidas; nunca se queda sin cifra la barra más alta.
+  const todas=n<=12, apretado=n>8, every=Math.ceil(n/8), iMax=items.findIndex(i=>i.value===max);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Gráfica"${apretado?' class="apretada"':""}>`;
   s+=`<line x1="${left}" x2="${W-right}" y1="${H-bottom}" y2="${H-bottom}"/>`;
-  items.forEach((it,i)=>{ const x=left+step*i+(step-bw)/2; const yy=y(it.value); const h=H-bottom-yy;
+  items.forEach((it,i)=>{ const x=left+step*i+(step-bw)/2; const yy=y(it.value); const h=H-bottom-yy; const cx=(x+bw/2).toFixed(1);
     s+=`<rect class="bar" x="${x.toFixed(1)}" y="${yy.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(h,0).toFixed(1)}" rx="3"><title>${esc(it.label)}: ${esc(fmtV(it.value))}</title></rect>`;
-    if(n<=8 || i%every===0 || i===n-1) s+=`<text class="v" x="${(x+bw/2).toFixed(1)}" y="${(yy-5).toFixed(1)}" text-anchor="middle">${esc(fmtV(it.value))}</text>`;
-    if(n<=8 || i%every===0 || i===n-1) s+=`<text x="${(x+bw/2).toFixed(1)}" y="${H-bottom+16}" text-anchor="middle">${esc(it.label)}</text>`;
+    if(todas || i===iMax || i===n-1) s+=`<text class="v" x="${cx}" y="${(yy-5).toFixed(1)}" text-anchor="middle">${esc(fmtV(it.value))}</text>`;
+    if(todas || i%every===0 || i===n-1) s+=`<text x="${cx}" y="${H-bottom+16}" text-anchor="middle">${esc(apretado&&it.short?it.short:it.label)}</text>`;
   });
   el.innerHTML=s+"</svg>";
 }
@@ -61,7 +64,7 @@ function renderSummary(){
   $("r-tablenote").textContent="";   // sin notas: la tabla habla sola
   const months=Object.keys(data.pagos).filter(inCtxMonth).sort(); // de más antiguo a más reciente
   const tp=$("r-pagos").querySelector("tbody"); tp.innerHTML="";
-  const mi=months.map(m=>{ const rows=data.pagos[m].rows||{}; const t=Object.values(rows).reduce((a,x)=>a+(x.amount||0),0); const tr=document.createElement("tr"); tr.innerHTML=`<td>${monthName(m)}</td><td class="n">${Object.keys(rows).length}</td><td class="n">${t} €</td>`; tp.append(tr); return {label:shortMonth(m),value:t}; });
+  const mi=months.map(m=>{ const rows=data.pagos[m].rows||{}; const t=Object.values(rows).reduce((a,x)=>a+(x.amount||0),0); const tr=document.createElement("tr"); tr.innerHTML=`<td>${monthName(m)}</td><td class="n">${Object.keys(rows).length}</td><td class="n">${t} €</td>`; tp.append(tr); return {label:shortMonth(m),short:MESES[+m.slice(5,7)-1].slice(0,3),value:t}; });
   bars($("r-chart-pag"), mi, v=>v+" €");
   const sKey = (ctx.season==="all"||!SEASONS.find(s=>s.id===ctx.season)) ? curSeasonKey() : ctx.season; const socias=Object.values(data.persons).filter(p=>isSocia(p,sKey));
   $("r-socias").hidden=!socias.length; $("r-socias").textContent = socias.length ? `Socias de la asociación ${sKey}: ${socias.length} (${socias.reduce((a,p)=>a+(p.socia[sKey].amount||0),0)} € en cuotas de socia).` : `Todavía no hay socias de la asociación registradas en la temporada ${sKey}.`;

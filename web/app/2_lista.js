@@ -14,10 +14,13 @@ function rosterFor(sid,date){
   return [...ids].map(id=>data.persons[id]||{id,name:id,active:false}).sort((a,b)=>a.name.localeCompare(b.name,"es"));
 }
 function renderRoster(){
-  const box=$("l-roster"); box.innerHTML=""; const q=quotaInfo();
+  // se conserva lo marcado en pantalla: si no, dar de alta/baja o renombrar a alguien desde Personas vaciaba la lista
+  // y el siguiente "Guardar cambios" quitaba a todo el mundo de la hoja (corregido 4/11/2026)
+  const box=$("l-roster"); const keep=new Set([...box.querySelectorAll("input:checked")].map(c=>c.value)); box.innerHTML=""; const q=quotaInfo();
+  const bloq=isSesLocked(curSessionId);
   rosterFor(curSessionId,$("l-date").value).forEach(p=>{
     const l=document.createElement("label"); l.className="p";
-    const c=document.createElement("input"); c.type="checkbox"; c.value=p.id;
+    const c=document.createElement("input"); c.type="checkbox"; c.value=p.id; c.checked=keep.has(p.id); c.disabled=bloq; if(c.checked) l.classList.add("on");
     c.addEventListener("change",()=>{ l.classList.toggle("on",c.checked); updCount(); saveDraft(); });
     l.append(c,document.createTextNode(p.name));
     if(p.active===false){ const m=document.createElement("span"); m.className="pend"; m.style.color="var(--muted)"; m.textContent="baja"; l.append(m); }
@@ -108,8 +111,8 @@ function applySesLock(){
 $("l-lock").addEventListener("click",()=>{
   if(!curSessionId) return; const k="s:"+curSessionId;
   if(isSesLocked(curSessionId)) confirmar($("l-lockrow"), "¿Corregir el registro de esta sesión?", "Sí, corregir", ()=>{
-    abiertos.add(k); applySesLock(); setStatus("l-status",""); });
-  else { const cerrar=()=>{ abiertos.delete(k); loadSession(curSessionId); clearDraft(); applySesLock(); setStatus("l-status","Corrección cancelada: el registro queda como estaba.","ok"); };
+    cortarFlash(); abiertos.add(k); applySesLock(); setStatus("l-status",""); });
+  else { const cerrar=()=>{ cortarFlash(); abiertos.delete(k); loadSession(curSessionId); clearDraft(); applySesLock(); setStatus("l-status","Corrección cancelada: el registro queda como estaba.","ok"); };
     if(listaTocada()) confirmar($("l-lockrow"), "Hay cambios sin guardar. ¿Cancelar y descartarlos?", "Sí, descartar", cerrar); else cerrar(); }
 });
 $("l-group").addEventListener("change",()=>{ setDate($("l-date").value, $("l-group").value); });

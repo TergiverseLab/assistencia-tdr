@@ -212,3 +212,5 @@ details.rses[open] summary{margin-bottom:6px}
 
 /* Barra «Guardar» desactivada: opaca (antes se transparentaba la lista de debajo) */
 .savebar .btn:disabled{opacity:1;background:var(--soft);color:var(--muted);box-shadow:none}
+
+.pay .name small.aviso{color:#8a5a00;font-weight:600}

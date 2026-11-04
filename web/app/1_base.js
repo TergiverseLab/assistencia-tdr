@@ -77,6 +77,7 @@ let guardando=false, flashT=null, flashOn=false;
 // corrigiendo algo ya registrado → "Guardar cambios"; si es nuevo → "Guardar asistencia" / "Guardar cuotas"
 const etiquetaGuardar = () => vistaActual==="pagos" ? (abiertos.has("m:"+curMonth) ? "Guardar cambios" : "Guardar cuotas")
                                                      : (curSessionId && abiertos.has("s:"+curSessionId) ? "Guardar cambios" : "Guardar asistencia");
+function cortarFlash(){ if(flashOn){ clearTimeout(flashT); flashOn=false; } }
 function botonGuardar(){ const b=$("save"); if(guardando||flashOn) return; b.classList.remove("saved","failed","busy"); b.textContent=etiquetaGuardar();
   b.disabled = vistaActual==="lista" ? isSesLocked(curSessionId) : vistaActual==="pagos" ? isLocked(curMonth) : false; }
 function botonEstado(estado,txt){ const b=$("save"); clearTimeout(flashT); b.classList.remove("saved","failed","busy");

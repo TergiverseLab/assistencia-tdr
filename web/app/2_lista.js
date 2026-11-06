@@ -128,6 +128,8 @@ function shiftWed(n){
   setDate(!reg ? sem : n>0 ? (reg<sem?reg:sem) : (reg>sem?reg:sem));
 }
 $("l-prevw").addEventListener("click",()=>shiftWed(-1)); $("l-nextw").addEventListener("click",()=>shiftWed(1));
+// Al abrir: el miércoles de hoy o, si hoy no es miércoles, el último miércoles (no una «sesión nueva» de jueves o viernes)
+function diaInicial(){ const d=new Date(todayISO()+"T12:00:00"); d.setDate(d.getDate()-((d.getDay()-3+7)%7)); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
 $("l-date").addEventListener("change",()=>{ if($("l-date").value) setDate($("l-date").value); });
 
 async function saveSession(){

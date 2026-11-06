@@ -2,7 +2,7 @@
    build.py            -> /home/claude/assistencia.html (versión Claude, sin skeleton)
    build.py github URL -> /home/claude/gh/index.html   (versión GitHub, documento completo, SHEET_URL = URL)"""
 import base64, pathlib, sys
-S = pathlib.Path(__file__).parent; SRC = S/"src"
+S = pathlib.Path(__file__).parent; SRC = S   # las fuentes están en web/ (antes, en web/src fuera del repo)
 def b64(n): return "data:image/png;base64," + base64.b64encode((S/"logos"/n).read_bytes()).decode()
 mode = sys.argv[1] if len(sys.argv)>1 else "claude"
 sheet = sys.argv[2] if len(sys.argv)>2 else ""

@@ -16,7 +16,7 @@ async function refresh(){
 }
 // Al volver a la página otro día (p. ej. quedó abierta en el móvil), Lista salta sola a la fecha de hoy
 let shownDay=null;
-function syncToday(){ const t=todayISO(); if(shownDay && shownDay!==t && !listaTocada()){ curSessionId=null; setDate(t); } shownDay=t; }
+function syncToday(){ const t=todayISO(); if(shownDay && shownDay!==t && !listaTocada()){ curSessionId=null; setDate(diaInicial()); } shownDay=t; }
 document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"){ syncToday(); refresh(); } });
 window.addEventListener("focus",syncToday); setInterval(syncToday,60000);
 // con cobertura débil el móvil no siempre avisa de que vuelve la red: cada minuto se reintenta lo pendiente
@@ -33,11 +33,11 @@ window.addEventListener("online",async()=>{ if(store){ await store.retry(); refr
     if(res.session && (!data.sessions[res.session.id] || store.pending().some(o=>o.key==="d:"+res.session.id))) return; // ya borrada aquí
     if(res.session) data.sessions[res.session.id]=res.session; if(res.pagos) data.pagos[res.pagos.month]={month:res.pagos.month,rows:res.pagos.rows}; if(res.person) data.persons[res.person.id]=res.person; };
   const cache=store.cached();
-  if(cache){ data=cache; store.pending().forEach(op=>aplicarOp(data,op)); setDate(todayISO()); shownDay=todayISO(); updPendientes(); }
+  if(cache){ data=cache; store.pending().forEach(op=>aplicarOp(data,op)); setDate(diaInicial()); shownDay=todayISO(); updPendientes(); }
   else banner("Cargando datos…");
   refreshing=true; updPendientes();
-  try{ data=await store.load(); refreshing=false; banner(""); if(cache) repintar(); else { setDate(todayISO()); shownDay=todayISO(); } updPendientes(); }
-  catch(e){ refreshing=false; updPendientes(); if(!cache){ banner("No se han podido cargar los datos. Comprueba la conexión y recarga.","err"); setDate(todayISO()); } else updPendientes(); }
+  try{ data=await store.load(); refreshing=false; banner(""); if(cache) repintar(); else { setDate(diaInicial()); shownDay=todayISO(); } updPendientes(); }
+  catch(e){ refreshing=false; updPendientes(); if(!cache){ banner("No se han podido cargar los datos. Comprueba la conexión y recarga.","err"); setDate(diaInicial()); } else updPendientes(); }
   if(store.name==="local") banner("Esta copia guarda solo en este dispositivo. No está conectada a la hoja del Drive.","err");
 })();
 

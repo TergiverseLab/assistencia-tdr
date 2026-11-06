@@ -63,7 +63,8 @@ function pintarFicha(f){
   const tras=async()=>{ renderPersons(); renderRoster(); }; // renderPersons ya deja la ficha abierta
   if(q(".f-baja")) q(".f-baja").addEventListener("click",async e=>{ const hacer=async()=>{ e.target.disabled=true; await guardarPersona(pid, off?{active:true,to:""}:{active:false,to:todayISO().slice(0,7)}, st); tras(); };
     if(off) hacer(); else confirmar(q(".f-estado"), `¿Estás seguro de dar de baja a ${p.name}? Deja de salir en la lista (conserva su historial).`, "Sí, dar de baja", hacer, true); });
-  if(q(".f-soc")) q(".f-soc").addEventListener("click",async e=>{ e.target.disabled=true; const socia={...(p.socia||{})}; if(socia[season]) delete socia[season]; else socia[season]={amount:SOCIA_AMOUNT,date:todayISO()}; await guardarPersona(pid,{socia},st); tras(); });
+  if(q(".f-soc")) q(".f-soc").addEventListener("click",e=>{ const quitar=!!soc; const hacer=async()=>{ e.target.disabled=true; await guardarPersona(pid,{socia:sociaTras(p,season)},st); tras(); };
+    if(quitar) confirmar(q(".f-soc"), `¿Quitar a ${p.name} como socia (${seasonLabel(season)})? Se borra el pago de la cuota de socia.`, "Sí, quitar", hacer, true); else hacer(); });
   // al cerrar los datos se olvida la contraseña: cada vez que se abren se vuelve a pedir
   const cerrarDatos=(msg)=>{ f.dataset.datos=""; clauMem=""; fitxes=null; fitxesError=""; fitxesAviso=""; pintarFicha(f); if(msg){ const s2=f.querySelector(".f-status"); s2.textContent=msg; s2.className="status f-status ok"; } };
   if(q(".f-abrir")) q(".f-abrir").addEventListener("click",async()=>{ f.dataset.datos="1"; pintarFicha(f); if(fitxes===null && clauFichas()){ await cargarFitxes(); if(f.isConnected) pintarFicha(f); } });

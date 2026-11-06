@@ -1,3 +1,8 @@
+// Socia: al quitarla se guarda en memoria lo que había; si se vuelve a marcar (p. ej. un toque sin querer), recupera importe y fecha
+const sociaQuitada={};
+function sociaTras(p,season){ const socia={...(p.socia||{})}, k=p.id+"|"+season;
+  if(socia[season]){ sociaQuitada[k]=socia[season]; delete socia[season]; } else socia[season]=sociaQuitada[k]||{amount:SOCIA_AMOUNT,date:todayISO()};
+  return socia; }
 // ===== 4. PERSONAS =====
 // Cada cambio (baja, socia, nombre, alta) se manda como cambio de esos campos solamente.
 function personSeasons(){
@@ -43,10 +48,10 @@ function renderPersons(){
     const hacer=async()=>{ b.disabled=true; await guardarPersona(p.id,set); renderPersons(); renderRoster(); };
     if(p.active===false) hacer(); else confirmar(b.closest(".person"), `¿Estás seguro de dar de baja a ${p.name}? Deja de salir en la lista (conserva su historial).`, "Sí, dar de baja", hacer, true);
   }));
-  list.querySelectorAll("button[data-soc]").forEach(b=>b.addEventListener("click",async()=>{
-    const p=data.persons[b.dataset.soc]; const socia={...(p.socia||{})};
-    if(socia[season]) delete socia[season]; else socia[season]={amount:SOCIA_AMOUNT,date:todayISO()};
-    b.disabled=true; await guardarPersona(p.id,{socia}); renderPersons();
+  list.querySelectorAll("button[data-soc]").forEach(b=>b.addEventListener("click",()=>{
+    const p=data.persons[b.dataset.soc]; const quitar=!!(p.socia&&p.socia[season]);
+    const hacer=async()=>{ b.disabled=true; await guardarPersona(p.id,{socia:sociaTras(p,season)}); renderPersons(); };
+    if(quitar) confirmar(b.closest(".person"), `¿Quitar a ${p.name} como socia (${seasonLabel(season)})? Se borra el pago de la cuota de socia.`, "Sí, quitar", hacer, true); else hacer();
   }));
 }
 $("n-add").addEventListener("click",async()=>{

@@ -205,6 +205,10 @@ textarea{font:inherit;font-size:.85rem;width:100%;min-height:140px;background:va
 details.rses summary{cursor:pointer;color:var(--muted);font-size:.9rem;padding:4px 0}
 details.rses[open] summary{margin-bottom:6px}
 
+/* aviso de texto bajo la barrita: qué está pasando con la hoja de Google */
+.sync{position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 8px);z-index:21;pointer-events:none;
+  background:var(--fg);color:var(--paper);font-size:.78rem;line-height:1.2;padding:5px 12px;border-radius:999px;max-width:calc(100% - 32px);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 2px 8px rgba(0,0,0,.18);opacity:.94}
 /* barrita de carga mientras se envía a la hoja */
 .carga{position:fixed;left:0;right:0;top:env(safe-area-inset-top,0px);height:4px;z-index:20;overflow:hidden;background:transparent;pointer-events:none}
 .carga i{position:absolute;top:0;bottom:0;width:35%;background:var(--fg);border-radius:2px;animation:carga 1.1s ease-in-out infinite}
@@ -253,6 +257,7 @@ details.rses[open] summary{margin-bottom:6px}
   <div class="lf"><span>Un projecte de l'Associació Laboratori Línia de Fuga</span><div class="logo-lf" role="img" aria-label="Línia de Fuga"></div></div>
 
   <div class="carga" id="carga" role="status" aria-label="Guardando en la hoja" hidden><i></i></div>
+  <div class="sync" id="sync" role="status" aria-live="polite" hidden></div>
   <div class="banner" id="banner" hidden></div>
 
   <!-- PASAR LISTA -->
@@ -539,7 +544,7 @@ async function pickStore(){
 
 (function(){
 // ===== 1. BASE: utilidades, temporadas, navegación, botón Guardar =====
-const APP_VERSION = "06/11 16:05:52";
+const APP_VERSION = "06/11 16:11:33";
 const SOCIA_AMOUNT = 30;            // cuota anual de socia de la asociación (acta 26-10-2026)
 const DEFAULT_AMOUNT = 45;          // cuota mensual habitual (septiembre fue 25)
 const $ = id => document.getElementById(id);
@@ -626,13 +631,24 @@ function botonEstado(estado,txt){ const b=$("save"); clearTimeout(flashT); b.cla
   flashT=setTimeout(()=>{ flashOn=false; botonGuardar(); },2500); }
 $("save").addEventListener("click",()=>{ if(guardando) return; if(vistaActual==="lista") saveSession(); else if(vistaActual==="pagos") savePagos(); });
 
+// ---------- aviso de texto: qué está pasando con la hoja de Google ----------
+// Subiendo lo guardado / cargando datos nuevos / «al día ✓» un par de segundos al terminar
+let syncAntes=false, syncT=null;
+function avisoSync(activo, pendientes){
+  const el=$("sync"); if(!el) return;
+  const subiendo=!!(store && store.enviando && store.enviando());
+  if(activo){ clearTimeout(syncT); syncT=null; el.textContent = subiendo ? "Guardado ✓ · subiendo a la hoja…" : "Cargando datos de la hoja de Google…"; el.hidden=false; syncAntes=true; return; }
+  if(syncAntes && !pendientes && !(store && store.motivo)){ el.textContent="Hoja de Google al día ✓"; el.hidden=false; clearTimeout(syncT); syncT=setTimeout(()=>{ el.hidden=true; syncT=null; },1800); }
+  else if(!syncT) el.hidden=true;   // si se está enseñando «al día ✓», se deja terminar
+  syncAntes=false;
+}
 // ---------- avisos de cambios pendientes de subir ----------
 // Aviso de cambios esperando: SOLO si un envío ha fallado de verdad (sin internet o puente antiguo).
 // Mientras se está enviando, solo la barrita de carga de arriba ("Guardando en la hoja…").
 function updPendientes(){
   const n = store && store.pending ? store.pending().length : 0; const b=$("banner");
   const enviando = !!(store && store.enviando && store.enviando()) || (typeof refreshing!=="undefined" && refreshing);
-  $("carga").hidden = !enviando;
+  $("carga").hidden = !enviando; avisoSync(enviando, n);
   if(n && !enviando && store.motivo){ b.hidden=false; b.className="banner warn"; b.innerHTML=`${esc(textoEspera())} <button class="btn ghost small" type="button" id="b-retry">Reintentar ahora</button>`;
     $("b-retry").onclick=async()=>{ $("b-retry").disabled=true; const antes=store.pending().length; await store.retry(); if(store.pending().length<antes) refresh(); updPendientes(); }; }
   else if(b.classList.contains("warn")){ b.hidden=true; b.className="banner"; b.textContent=""; }

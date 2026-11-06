@@ -86,13 +86,24 @@ function botonEstado(estado,txt){ const b=$("save"); clearTimeout(flashT); b.cla
   flashT=setTimeout(()=>{ flashOn=false; botonGuardar(); },2500); }
 $("save").addEventListener("click",()=>{ if(guardando) return; if(vistaActual==="lista") saveSession(); else if(vistaActual==="pagos") savePagos(); });
 
+// ---------- aviso de texto: qué está pasando con la hoja de Google ----------
+// Subiendo lo guardado / cargando datos nuevos / «al día ✓» un par de segundos al terminar
+let syncAntes=false, syncT=null;
+function avisoSync(activo, pendientes){
+  const el=$("sync"); if(!el) return;
+  const subiendo=!!(store && store.enviando && store.enviando());
+  if(activo){ clearTimeout(syncT); syncT=null; el.textContent = subiendo ? "Guardado ✓ · subiendo a la hoja…" : "Cargando datos de la hoja de Google…"; el.hidden=false; syncAntes=true; return; }
+  if(syncAntes && !pendientes && !(store && store.motivo)){ el.textContent="Hoja de Google al día ✓"; el.hidden=false; clearTimeout(syncT); syncT=setTimeout(()=>{ el.hidden=true; syncT=null; },1800); }
+  else if(!syncT) el.hidden=true;   // si se está enseñando «al día ✓», se deja terminar
+  syncAntes=false;
+}
 // ---------- avisos de cambios pendientes de subir ----------
 // Aviso de cambios esperando: SOLO si un envío ha fallado de verdad (sin internet o puente antiguo).
 // Mientras se está enviando, solo la barrita de carga de arriba ("Guardando en la hoja…").
 function updPendientes(){
   const n = store && store.pending ? store.pending().length : 0; const b=$("banner");
   const enviando = !!(store && store.enviando && store.enviando()) || (typeof refreshing!=="undefined" && refreshing);
-  $("carga").hidden = !enviando;
+  $("carga").hidden = !enviando; avisoSync(enviando, n);
   if(n && !enviando && store.motivo){ b.hidden=false; b.className="banner warn"; b.innerHTML=`${esc(textoEspera())} <button class="btn ghost small" type="button" id="b-retry">Reintentar ahora</button>`;
     $("b-retry").onclick=async()=>{ $("b-retry").disabled=true; const antes=store.pending().length; await store.retry(); if(store.pending().length<antes) refresh(); updPendientes(); }; }
   else if(b.classList.contains("warn")){ b.hidden=true; b.className="banner"; b.textContent=""; }

@@ -190,6 +190,10 @@ textarea{font:inherit;font-size:.85rem;width:100%;min-height:140px;background:va
 details.rses summary{cursor:pointer;color:var(--muted);font-size:.9rem;padding:4px 0}
 details.rses[open] summary{margin-bottom:6px}
 
+/* aviso de texto bajo la barrita: qué está pasando con la hoja de Google */
+.sync{position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 8px);z-index:21;pointer-events:none;
+  background:var(--fg);color:var(--paper);font-size:.78rem;line-height:1.2;padding:5px 12px;border-radius:999px;max-width:calc(100% - 32px);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 2px 8px rgba(0,0,0,.18);opacity:.94}
 /* barrita de carga mientras se envía a la hoja */
 .carga{position:fixed;left:0;right:0;top:env(safe-area-inset-top,0px);height:4px;z-index:20;overflow:hidden;background:transparent;pointer-events:none}
 .carga i{position:absolute;top:0;bottom:0;width:35%;background:var(--fg);border-radius:2px;animation:carga 1.1s ease-in-out infinite}
